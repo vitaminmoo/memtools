@@ -68,20 +68,20 @@ func Unmarshal(data []byte, v any) error {
 
 		size := uint64(fieldVal.Type().Size())
 		end := offset + size
-		if end >= uint64(len(data)) {
+		if end > uint64(len(data)) {
 			return fmt.Errorf("sparsestruct: target offset %d for field %s of size %d is out of bounds", offset, field.Name, size)
 		}
 
 		switch fieldVal.Kind() {
 		case reflect.Int8:
 			val := data[offset]
-			fieldVal.SetInt(int64(val))
+			fieldVal.SetInt(int64(int8(val)))
 		case reflect.Int16:
 			val := byteOrder.Uint16(data[offset:end])
-			fieldVal.SetInt(int64(val))
+			fieldVal.SetInt(int64(int16(val)))
 		case reflect.Int32:
 			val := byteOrder.Uint32(data[offset:end])
-			fieldVal.SetInt(int64(val))
+			fieldVal.SetInt(int64(int32(val)))
 		case reflect.Int, reflect.Int64:
 			val := byteOrder.Uint64(data[offset:end])
 			fieldVal.SetInt(int64(val))
@@ -89,7 +89,7 @@ func Unmarshal(data []byte, v any) error {
 			val := data[offset]
 			fieldVal.SetUint(uint64(val))
 		case reflect.Uint16:
-			val := binary.LittleEndian.Uint16(data[offset:end])
+			val := byteOrder.Uint16(data[offset:end])
 			fieldVal.SetUint(uint64(val))
 		case reflect.Uint32:
 			val := byteOrder.Uint32(data[offset:end])
