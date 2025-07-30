@@ -1,6 +1,7 @@
 package sparsestruct_test
 
 import (
+	"bytes"
 	"math"
 	"testing"
 
@@ -11,8 +12,11 @@ import (
 
 func TestBasic(t *testing.T) {
 	t.Parallel()
-	data := []byte{0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
+	rawData := []byte{0xFF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
+	data := bytes.NewReader(rawData)
+
 	var v struct {
+		Field0 uint8
 		Field1 uint8 `offset:"1"`
 		Field2 uint8 `offset:"0b10"`
 		Field3 uint8
@@ -24,45 +28,42 @@ func TestBasic(t *testing.T) {
 	err := sparsestruct.Unmarshal(data, &v)
 	require.NoError(t, err)
 
-	assert.Equal(t, uint8(1), v.Field1, "Field1 should be 1")
-	assert.Equal(t, uint8(2), v.Field2, "Field2 should be 2")
-	assert.Equal(t, uint8(3), v.Field3, "Field3 should be 3")
-	assert.Equal(t, uint8(4), v.Field4, "Field4 should be 4")
-	assert.Equal(t, uint8(6), v.Field6, "Field6 should be 6")
+	assert.Equal(t, uint8(0xFF), v.Field0)
+	assert.Equal(t, uint8(0x01), v.Field1)
+	assert.Equal(t, uint8(0x02), v.Field2)
+	assert.Equal(t, uint8(0x03), v.Field3)
+	assert.Equal(t, uint8(0x04), v.Field4)
+	assert.Equal(t, uint8(0x06), v.Field6)
 }
 
 func TestPointer(t *testing.T) {
 	t.Parallel()
-	data := []byte{0xF8, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}
-	var v struct {
-		Field1 sparsestruct.PointerGetter `offset:"0"`
+	rawData := []byte{
+		0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 	}
+	data := bytes.NewReader(rawData)
+	type DestStruct struct {
+		field1 uint8
+		field2 uint8 `offset:"4"`
+	}
+	type SourceStruct struct {
+		DestPointer *sparsestruct.PointerGetter[DestStruct]
+	}
+
+	v := SourceStruct{}
 
 	err := sparsestruct.Unmarshal(data, &v)
 	require.NoError(t, err)
+	require.NotNil(t, v.DestPointer)
 
-	data2 := []byte{
-		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
-		0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-		0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	}
-
-	var v2 struct {
-		Field1 uint64 `offset:"0"`
-		Field2 uint64 `offset:"8"`
-	}
-
-	assert.Equal(t, v.Field1.Address(), uint64(0xF8), "Field1 should be at address 0xF8")
-
-	needed, err := sparsestruct.Length(&v2)
+	err = v.DestPointer.Read(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, uint64(16), needed, "v2 should only need 16 bytes")
+	assert.Equal(t, uintptr(0x10), v.DestPointer.Address())
 
-	err = v.Field1.Get(0xF0, data2, &v2)
-	require.NoError(t, err)
-
-	assert.Equal(t, uint64(1), v2.Field1, "Field1 should be 1")
-	assert.Equal(t, uint64(2), v2.Field2, "Field2 should be 2")
+	require.Equal(t, int8(0x00), v.DestPointer.Value().field1)
+	require.Equal(t, int8(0x04), v.DestPointer.Value().field2)
 }
 
 func TestIntegerTypes(t *testing.T) {
@@ -388,7 +389,7 @@ func TestIntegerTypes(t *testing.T) {
 		tc := tc
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := sparsestruct.Unmarshal(tc.data, tc.v)
+			err := sparsestruct.Unmarshal(bytes.NewReader(tc.data), tc.v)
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, tc.v)
 		})
