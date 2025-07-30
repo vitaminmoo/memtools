@@ -8,11 +8,19 @@ import (
 	"strings"
 )
 
+// Unmarshal unmarshals a byte slice into a struct.
+//
+// You may specify an offset tag per v field with either `le` or `be` to specify the byte order.
+//
+// You may also specify a numeric value in the offset tag per field.
+//
+// This offset defaults to 0 for the first field, and for any subsequent fields,
+// it defaults to the sum of the previous field's offset and its size.
 func Unmarshal(data []byte, v any) error {
 	return unmarshal(0, data, v)
 }
 
-func unmarshal(base uint64, data []byte, v any) error {
+func unmarshal(base uintptr, data []byte, v any) error {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return fmt.Errorf("sparsestruct: Unmarshal(non-pointer %T)", v)
@@ -25,7 +33,7 @@ func unmarshal(base uint64, data []byte, v any) error {
 
 	t := elem.Type()
 
-	var next uint64 = 0
+	var next uintptr = 0
 
 	for i := range elem.NumField() {
 		field := t.Field(i)
@@ -35,7 +43,7 @@ func unmarshal(base uint64, data []byte, v any) error {
 			return fmt.Errorf("sparsestruct: Unmarshal(non-settable field %s)", field.Name)
 		}
 
-		var offset uint64 = base
+		var offset uintptr = base
 		var byteOrder binary.ByteOrder = binary.NativeEndian
 
 		offsetTag := field.Tag.Get("offset")
@@ -49,7 +57,7 @@ func unmarshal(base uint64, data []byte, v any) error {
 			if err != nil {
 				return fmt.Errorf("sparsestruct: invalid offset tag on field %s: %w", field.Name, err)
 			}
-			offset += offsetVal
+			offset += uintptr(offsetVal)
 			for _, part := range offsetParts[1:] {
 				switch part {
 				case "le":
@@ -61,25 +69,25 @@ func unmarshal(base uint64, data []byte, v any) error {
 				}
 			}
 		} else {
-			offset = base + next
+			offset = base + uintptr(next)
 		}
 
 		if fieldVal.Type() == reflect.TypeOf(PointerGetter{}) {
-			size := uint64(8) // Assuming 64-bit pointers
+			size := uintptr(8) // Assuming 64-bit pointers
 			end := offset + size
-			if end > uint64(len(data)) {
+			if end > uintptr(len(data)) {
 				return fmt.Errorf("sparsestruct: target offset %d for field %s of size %d is out of bounds", offset, field.Name, size)
 			}
 			val := byteOrder.Uint64(data[offset:end])
-			pg := PointerGetter{address: val}
+			pg := PointerGetter{address: uintptr(val)}
 			fieldVal.Set(reflect.ValueOf(pg))
 			next = end
 			continue
 		}
 
 		size := uint64(fieldVal.Type().Size())
-		end := offset + size
-		if end > uint64(len(data)) {
+		end := offset + uintptr(size)
+		if end > uintptr(len(data)) {
 			return fmt.Errorf("sparsestruct: target offset %d for field %s of size %d is out of bounds", offset, field.Name, size)
 		}
 
@@ -123,16 +131,27 @@ func unmarshal(base uint64, data []byte, v any) error {
 // This can then be used with PointerGetter.Address() and PointerGetter.Length()
 // to determine where and how much to read to feed to PointerGetter.Get(), which will unmarshal the target value.
 type PointerGetter struct {
-	address uint64
+	address uintptr
 }
 
 // Address returns the raw address of the pointer.
-func (pg *PointerGetter) Address() uint64 {
+func (pg *PointerGetter) Address() uintptr {
 	return pg.address
 }
 
-// Length returns the length required to successfully unmarshal the target value.
-func (pg *PointerGetter) Length(v any) (uint64, error) {
+// Get stores a previously unmarshaled pointer value, and allows for pointer chasing.
+//
+// base: The base address of data[0] in the virtual address space of the original data.
+// data: The byte slice containing at least PointerGetter.Length(v) bytes.
+// v: The value to store the pointed to value in.
+func (pg *PointerGetter) Get(base uintptr, data []byte, v any) error {
+	offset := pg.address - base
+	unmarshal(offset, data, v)
+	return nil
+}
+
+// Length returns the number of bytes required to successfully unmarshal the target value.
+func Length(v any) (uint64, error) {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
 		return 0, fmt.Errorf("sparsestruct: Unmarshal(non-pointer %T)", v)
@@ -195,15 +214,4 @@ func (pg *PointerGetter) Length(v any) (uint64, error) {
 	}
 
 	return end, nil
-}
-
-// Get stores a previously unmarshaled pointer value, and allows for pointer chasing.
-//
-// base: The base address of data[0] in the virtual address space of the original data.
-// data: The byte slice containing at least PointerGetter.Length(v) bytes.
-// v: The value to store the pointed to value in.
-func (pg *PointerGetter) Get(base uint64, data []byte, v any) error {
-	offset := pg.address - base
-	unmarshal(offset, data, v)
-	return nil
 }

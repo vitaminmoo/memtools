@@ -54,7 +54,7 @@ func TestPointer(t *testing.T) {
 
 	assert.Equal(t, v.Field1.Address(), uint64(0xF8), "Field1 should be at address 0xF8")
 
-	needed, err := v.Field1.Length(&v2)
+	needed, err := sparsestruct.Length(&v2)
 	require.NoError(t, err)
 	assert.Equal(t, uint64(16), needed, "v2 should only need 16 bytes")
 
