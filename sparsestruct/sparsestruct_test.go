@@ -45,8 +45,8 @@ func TestPointer(t *testing.T) {
 	}
 	data := bytes.NewReader(rawData)
 	type DestStruct struct {
-		field1 uint8
-		field2 uint8 `offset:"4"`
+		Field1 uint8
+		Field2 uint8 `offset:"4"`
 	}
 	type SourceStruct struct {
 		DestPointer *sparsestruct.PointerGetter[DestStruct]
@@ -62,8 +62,8 @@ func TestPointer(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, uintptr(0x10), v.DestPointer.Address())
 
-	require.Equal(t, int8(0x00), v.DestPointer.Value().field1)
-	require.Equal(t, int8(0x04), v.DestPointer.Value().field2)
+	require.Equal(t, uint8(0x00), v.DestPointer.Value().Field1)
+	require.Equal(t, uint8(0x04), v.DestPointer.Value().Field2)
 }
 
 func TestIntegerTypes(t *testing.T) {

@@ -164,23 +164,26 @@ func unmarshal(addr uintptr, data io.ReadSeeker, v any) error {
 type PointerGetter[T any] struct {
 	AddressValue uintptr
 	Data         io.ReadSeeker
-	val          *T
+	Val          *T
 }
 
 // Value returns the stored pointer.
 func (p *PointerGetter[T]) Value() *T {
-	return p.val
+	return p.Val
 }
 
 // Address returns the value relative the readseeker's base address.
 func (p *PointerGetter[T]) Address() uintptr {
-	if p.val == nil {
-		return 0
+	if p.Val == nil {
+		p.Val = new(T)
 	}
 	return p.AddressValue
 }
 
 // Read is a no-op for a preloaded value.
 func (p *PointerGetter[T]) Read(ctx context.Context) error {
-	return unmarshal(p.AddressValue, p.Data, p.val)
+	if p.Val == nil {
+		p.Val = new(T)
+	}
+	return unmarshal(p.AddressValue, p.Data, p.Val)
 }

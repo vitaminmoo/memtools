@@ -2,6 +2,7 @@ package pidmaps
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -14,7 +15,9 @@ const (
 	PermPrivateShared = 0b0001
 )
 
-func Maps(pid int) ([]Map, error) {
+var ErrInvalidAddress = errors.New("invalid address")
+
+func Read(pid int) (Maps, error) {
 	file, err := os.Open(fmt.Sprintf("/proc/%d/maps", pid))
 	if err != nil {
 		return nil, err
@@ -94,10 +97,10 @@ func Maps(pid int) ([]Map, error) {
 		}
 
 		maps = append(maps, Map{
-			addressStart: uintptr(addressStart),
-			addressEnd:   uintptr(addressEnd),
+			addressStart: addressStart,
+			addressEnd:   addressEnd,
 			perms:        perms,
-			offset:       uintptr(offset),
+			offset:       offset,
 			devMajor:     devMajor,
 			devMinor:     devMinor,
 			inode:        inode,
@@ -112,23 +115,23 @@ func Maps(pid int) ([]Map, error) {
 }
 
 type Map struct {
-	addressStart uintptr
-	addressEnd   uintptr
+	addressStart uint64
+	addressEnd   uint64
 	perms        int8
-	offset       uintptr
+	offset       uint64
 	devMajor     int
 	devMinor     int
 	inode        int64
 	pathName     string
 }
 
-func (m Map) Start() uintptr {
+func (m Map) Start() uint64 {
 	return m.addressStart
 }
-func (m Map) End() uintptr {
+func (m Map) End() uint64 {
 	return m.addressEnd
 }
-func (m Map) Contains(addr uintptr) bool {
+func (m Map) Contains(addr uint64) bool {
 	return m.Start() <= addr && addr < m.End()
 }
 func (m Map) PermRead() bool {
@@ -150,7 +153,7 @@ func (m Map) PermShared() bool {
 	return m.perms&PermPrivateShared != 0
 }
 
-func (m Map) Offset() uintptr {
+func (m Map) Offset() uint64 {
 	return m.offset
 }
 
@@ -180,4 +183,28 @@ func (m Map) PathNameDeleted() bool {
 
 func (m Map) Anonymous() bool {
 	return m.pathName == ""
+}
+
+type Maps []Map
+
+func (m Maps) Start() uint64 {
+	if len(m) == 0 {
+		return 0
+	}
+	return m[0].Start()
+}
+func (m Maps) End() uint64 {
+	if len(m) == 0 {
+		return 0
+	}
+	return m[len(m)-1].End()
+}
+
+func (m Maps) Find(addr uint64) (Map, error) {
+	for _, m := range m {
+		if m.Contains(addr) {
+			return m, nil
+		}
+	}
+	return Map{}, ErrInvalidAddress
 }
