@@ -1,4 +1,7 @@
-package pidmaps
+// Package maps provides functionality to read and parse the memory mappings of a process
+// from the /proc/[pid]/maps file on Linux systems.
+// It defines types and methods to represent and manipulate these memory mappings.
+package maps
 
 import (
 	"bufio"
@@ -128,15 +131,19 @@ type Map struct {
 func (m Map) Start() uint64 {
 	return m.addressStart
 }
+
 func (m Map) End() uint64 {
 	return m.addressEnd
 }
+
 func (m Map) Contains(addr uint64) bool {
 	return m.Start() <= addr && addr < m.End()
 }
+
 func (m Map) PermRead() bool {
 	return m.perms&PermRead != 0
 }
+
 func (m Map) PermWrite() bool {
 	return m.perms&PermWrite != 0
 }
@@ -193,6 +200,7 @@ func (m Maps) Start() uint64 {
 	}
 	return m[0].Start()
 }
+
 func (m Maps) End() uint64 {
 	if len(m) == 0 {
 		return 0

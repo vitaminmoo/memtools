@@ -1,11 +1,11 @@
-package ptrchain
+// Package process provides functionality to read memory from a process.
+package process
 
 import (
 	"context"
 	"fmt"
 	"io"
 
-	"github.com/vitaminmoo/memtools/memreader"
 	"github.com/vitaminmoo/memtools/sparsestruct"
 )
 
@@ -20,7 +20,7 @@ func New(pid int) *Process {
 }
 
 func (p *Process) Read(ctx context.Context, base uint64, v any) error {
-	reader := memreader.New(p.PID)
+	reader := NewMemReader(p.PID)
 	reader.Seek(int64(base), io.SeekStart)
 	err := sparsestruct.Unmarshal(reader, v)
 	if err != nil {

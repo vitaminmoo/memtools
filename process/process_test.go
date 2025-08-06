@@ -1,4 +1,4 @@
-package ptrchain_test
+package process_test
 
 import (
 	"os"
@@ -6,7 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/vitaminmoo/memtools/ptrchain"
+	"github.com/vitaminmoo/memtools/process"
 	"github.com/vitaminmoo/memtools/sparsestruct"
 )
 
@@ -22,7 +22,7 @@ type TestTop struct {
 }
 
 func TestRead(t *testing.T) {
-	process := ptrchain.New(os.Getpid())
+	process := process.New(os.Getpid())
 
 	var eh TestTop
 	err := process.Read(t.Context(), 0x400000, &eh)

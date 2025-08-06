@@ -1,30 +1,30 @@
-package memreader
+package process
 
 import (
 	"context"
 	"fmt"
 
-	"github.com/vitaminmoo/memtools/pidmaps"
+	"github.com/vitaminmoo/memtools/maps"
 	"golang.org/x/sys/unix"
 )
 
-type Config struct {
-	filter func(pidmaps.Map) bool
+type MemReaderConfig struct {
+	filter func(maps.Map) bool
 }
 
-type Option func(*Config)
+type MemReaderOption func(*MemReaderConfig)
 
-type MemReadSeeker struct {
+type MemReader struct {
 	pid int
 	cur uint64
-	c   Config
+	c   MemReaderConfig
 }
 
-func New(pid int, o ...Option) *MemReadSeeker {
-	m := &MemReadSeeker{
+func NewMemReader(pid int, o ...MemReaderOption) *MemReader {
+	m := &MemReader{
 		pid: pid,
 		cur: 0,
-		c:   Config{},
+		c:   MemReaderConfig{},
 	}
 	for _, opt := range o {
 		opt(&m.c)
@@ -32,7 +32,7 @@ func New(pid int, o ...Option) *MemReadSeeker {
 	return m
 }
 
-func (mr *MemReadSeeker) Read(b []byte) (int, error) {
+func (mr *MemReader) Read(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
 	}
@@ -46,12 +46,12 @@ func (mr *MemReadSeeker) Read(b []byte) (int, error) {
 	return size, nil
 }
 
-func (mr *MemReadSeeker) Seek(offset int64, whence int) (int64, error) {
-	m, err := pidmaps.Read(mr.pid)
+func (mr *MemReader) Seek(offset int64, whence int) (int64, error) {
+	m, err := maps.Read(mr.pid)
 	if err != nil {
 		return 0, err
 	}
-	cur := mr.cur
+	var cur uint64
 	switch whence {
 	case 0: // SeekStart
 		cur = uint64(offset)
@@ -72,15 +72,15 @@ func (mr *MemReadSeeker) Seek(offset int64, whence int) (int64, error) {
 
 type Result struct {
 	Data []byte
-	Map  *pidmaps.Map
+	Map  *maps.Map
 }
 
-func (mr *MemReadSeeker) ReadWithInfo(ctx context.Context, addr uint64, size uint64) (Result, error) {
+func (mr *MemReader) ReadWithInfo(ctx context.Context, addr uint64, size uint64) (Result, error) {
 	fmt.Printf("addr: %X, size: %d\n", addr, size)
 	result := Result{
 		Data: make([]byte, size),
 	}
-	maps, err := pidmaps.Read(mr.pid)
+	maps, err := maps.Read(mr.pid)
 	if err != nil {
 		return result, fmt.Errorf("getting maps: %w", err)
 	}

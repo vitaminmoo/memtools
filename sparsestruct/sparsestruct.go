@@ -1,3 +1,7 @@
+// Package sparsestruct provides functionality to unmarshal sparse binary data
+// into Go structs. It supports specifying offsets and byte orders via struct
+// tags, and can handle pointer fields that reference other structures in
+// memory.
 package sparsestruct
 
 import (
