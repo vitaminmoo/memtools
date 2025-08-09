@@ -9,9 +9,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 
+	"github.com/vitaminmoo/memtools/maps"
 	"github.com/vitaminmoo/memtools/sparsestruct"
 )
 
@@ -84,53 +87,112 @@ func (p *Process) Find(ctx context.Context, search []byte) (int64, error) {
 		return -1, fmt.Errorf("search pattern is empty")
 	}
 
-	m := NewMemReader(p.PID)
-	buffer := make([]byte, findChunkSize+searchLen-1)
-	overlap := make([]byte, 0, searchLen-1)
-	_, err := m.Seek(0, io.SeekStart)
+	allMaps, err := maps.Read(p.PID)
 	if err != nil {
-		// No readable memory maps
-		return -1, fmt.Errorf("no readable memory found: %w", err)
+		return -1, fmt.Errorf("could not read memory maps: %w", err)
 	}
 
-	for {
-		readAddr, err := m.Seek(0, io.SeekCurrent)
-		if err != nil {
-			return -1, fmt.Errorf("could not get current memory address: %w", err)
+	readableMaps := make(chan maps.Map, len(allMaps))
+	for _, m := range allMaps {
+		if m.PermRead() {
+			readableMaps <- m
+		}
+	}
+	close(readableMaps)
+
+	var wg sync.WaitGroup
+	resultChan := make(chan int64, 1)
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	numWorkers := runtime.NumCPU()
+	for i := 0; i < numWorkers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			p.findWorker(ctx, search, readableMaps, resultChan, cancel)
+		}()
+	}
+
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	if addr, ok := <-resultChan; ok {
+		return addr, nil
+	}
+
+	return -1, fmt.Errorf("pattern not found")
+}
+
+func (p *Process) findWorker(ctx context.Context, search []byte, mapsChan <-chan maps.Map, resultChan chan<- int64, cancel context.CancelFunc) {
+	searchLen := len(search)
+	buffer := make([]byte, findChunkSize+searchLen-1)
+
+	for m := range mapsChan {
+		select {
+		case <-ctx.Done():
+			return
+		default:
 		}
 
-		bytesRead, err := m.Read(buffer[len(overlap):])
+		addr, err := p.findInMap(ctx, search, m, buffer)
+		if err == nil {
+			cancel()
+			resultChan <- addr
+			return
+		}
+	}
+}
+
+func (p *Process) findInMap(ctx context.Context, search []byte, m maps.Map, buffer []byte) (int64, error) {
+	searchLen := len(search)
+	overlap := make([]byte, 0, searchLen-1)
+	currentAddr := m.Start()
+	memReader := NewMemReader(p.PID)
+
+	for currentAddr < m.End() {
+		select {
+		case <-ctx.Done():
+			return -1, ctx.Err()
+		default:
+		}
+
+		_, err := memReader.Seek(int64(currentAddr), io.SeekStart)
+		if err != nil {
+			return -1, fmt.Errorf("seek failed in map %s: %w", m.PathName(), err)
+		}
+
+		readStartAddr, err := memReader.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return -1, err
+		}
+
+		bytesRead, err := memReader.Read(buffer[len(overlap):])
 		if err != nil {
 			var readErr ReadError
 			if errors.As(err, &readErr) {
 				if readErr.errorType == ErrEndOfMap {
-					fmt.Printf("Reached end of map at 0x%x, jumping to next valid region at 0x%x\n", readAddr, readErr.nextValid)
-					// Jump to the next valid memory region.
-					_, seekErr := m.Seek(int64(readErr.nextValid), io.SeekStart)
-					if seekErr != nil {
-						// This could happen if nextValid is invalid or we are at the end.
-						return -1, fmt.Errorf("pattern not found, seek failed: %w", seekErr)
-					}
-					overlap = overlap[:0] // Reset overlap after a jump.
+					currentAddr = readErr.nextValid
+					overlap = overlap[:0]
 					continue
-				} else if readErr.errorType == ErrEndOfMemory {
-					// Reached the end of all readable memory.
-					break
 				}
 			}
-			// Some other unexpected error.
-			return -1, fmt.Errorf("error reading memory at 0x%x: %w", readAddr, err)
+			return -1, fmt.Errorf("read failed in map %s: %w", m.PathName(), err)
 		}
 
 		if bytesRead == 0 {
+			currentAddr++
 			continue
 		}
 
 		dataToSearch := buffer[:len(overlap)+bytesRead]
-
 		if idx := bytes.Index(dataToSearch, search); idx != -1 {
-			return readAddr + int64(idx) - int64(len(overlap)), nil
+			return readStartAddr + int64(idx) - int64(len(overlap)), nil
 		}
+
+		currentAddr = uint64(readStartAddr + int64(bytesRead))
 
 		if len(dataToSearch) > searchLen-1 {
 			overlap = append(overlap[:0], dataToSearch[len(dataToSearch)-(searchLen-1):]...)
@@ -139,5 +201,5 @@ func (p *Process) Find(ctx context.Context, search []byte) (int64, error) {
 		}
 	}
 
-	return -1, fmt.Errorf("pattern not found")
+	return -1, fmt.Errorf("pattern not found in map")
 }
