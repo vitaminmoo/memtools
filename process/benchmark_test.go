@@ -2,6 +2,7 @@ package process
 
 import (
 	"bufio"
+	"context"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -19,6 +20,8 @@ var (
 	benchmarkMemSize  int64
 )
 
+const memSizeMB = 256
+
 func TestMain(m *testing.M) {
 	// Setup
 	fmt.Println("Setting up benchmark environment...")
@@ -32,7 +35,6 @@ func TestMain(m *testing.M) {
 	}
 
 	// Run the benchmark target
-	const memSizeMB = 1024
 	benchmarkMemSize = memSizeMB * 1024 * 1024
 	targetCmd := exec.Command("../benchmark_target/benchmark_target")
 	targetCmd.Env = append(os.Environ(), fmt.Sprintf("ALLOCATE_MEM_MB=%d", memSizeMB))
@@ -138,7 +140,7 @@ func verifyAndLogResults(b *testing.B, foundMatches []Match, expectedMatches []M
 		b.Errorf("Expected to find %d matches, but only found %d in the target block", len(expectedMatches), verifiedCount)
 	}
 
-	scanSizeMB := float64(1024) // Since we allocated 1024MB
+	scanSizeMB := float64(memSizeMB)
 	throughput := scanSizeMB / b.Elapsed().Seconds()
 	b.Logf("Total scanned: %.2f MB. Throughput: %.2f MB/s", scanSizeMB, throughput)
 }
@@ -175,4 +177,57 @@ func BenchmarkOptimizedScanner_Find_MultiPattern(b *testing.B) {
 		}
 	}
 	verifyAndLogResults(b, found, benchmarkMatches)
+}
+
+func BenchmarkBruteForceScanner_FindAll_MultiPattern(b *testing.B) {
+	p := New(benchmarkPID)
+	p.Scanner = &BruteForceScanner{}
+
+	b.ResetTimer()
+	var found []Match
+	var err error
+	for b.Loop() {
+		found, err = p.Find(b.Context(), benchmarkPatterns)
+		if err != nil {
+			b.Fatalf("FindAll failed: %v", err)
+		}
+	}
+	verifyAndLogResults(b, found, benchmarkMatches)
+}
+
+func BenchmarkOptimizedScanner_FindAll_MultiPattern(b *testing.B) {
+	p := New(benchmarkPID)
+	p.Scanner = &OptimizedScanner{}
+
+	b.ResetTimer()
+	var found []Match
+	var err error
+	for b.Loop() {
+		found, err = p.Find(b.Context(), benchmarkPatterns)
+		if err != nil {
+			b.Fatalf("FindAll failed: %v", err)
+		}
+	}
+	verifyAndLogResults(b, found, benchmarkMatches)
+}
+
+func TestReadKnownValues(t *testing.T) {
+	p := New(benchmarkPID)
+	mem := NewMemReader(p.PID)
+
+	for i, match := range benchmarkMatches {
+		expectedPattern := benchmarkPatterns[i].Value
+		result, err := mem.ReadWithInfo(context.Background(), uint64(match.Address), uint64(len(expectedPattern)))
+		if err != nil {
+			t.Errorf("Failed to read memory at address 0x%x: %v", match.Address, err)
+			continue
+		}
+
+		if string(result.Data) != string(expectedPattern) {
+			t.Errorf("Value mismatch at address 0x%x:\nExpected: %x\nActual:   %x",
+				match.Address, expectedPattern, result.Data)
+		} else {
+			t.Logf("Successfully verified pattern %d at address 0x%x", i+1, match.Address)
+		}
+	}
 }
