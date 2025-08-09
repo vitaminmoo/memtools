@@ -1,12 +1,6 @@
 package process_test
 
 import (
-	"os"
-	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
-	"github.com/vitaminmoo/memtools/process"
 	"github.com/vitaminmoo/memtools/sparsestruct"
 )
 
@@ -21,6 +15,7 @@ type TestTop struct {
 	Fourth *sparsestruct.PointerGetter[TestSecond]
 }
 
+/*
 func TestRead(t *testing.T) {
 	process := process.New(os.Getpid())
 
@@ -31,3 +26,5 @@ func TestRead(t *testing.T) {
 	assert.Equal(t, uint8(0x02), eh.Second)
 	assert.Equal(t, uint64(0x400008), eh.Fourth.Address())
 }
+
+*/

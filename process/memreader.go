@@ -38,6 +38,12 @@ type MemReaderConfig struct {
 
 type MemReaderOption func(*MemReaderConfig)
 
+func WithFilter(filter func(maps.Map) bool) MemReaderOption {
+	return func(c *MemReaderConfig) {
+		c.filter = filter
+	}
+}
+
 type MemReader struct {
 	pid        int
 	cur        uint64
