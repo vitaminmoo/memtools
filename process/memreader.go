@@ -8,6 +8,30 @@ import (
 	"golang.org/x/sys/unix"
 )
 
+type ReadError struct {
+	errorType readErrorType
+	address   uint64
+	nextValid uint64
+}
+
+func (e ReadError) Error() string {
+	switch e.errorType {
+	case ErrEndOfMemory:
+		return fmt.Sprintf("reached end of memory at address 0x%X", e.address)
+	case ErrEndOfMap:
+		return fmt.Sprintf("address 0x%X is not mapped, next valid address is 0x%X", e.address, e.nextValid)
+	default:
+		return "unknown read error"
+	}
+}
+
+type readErrorType int
+
+const (
+	ErrEndOfMemory readErrorType = iota
+	ErrEndOfMap
+)
+
 type MemReaderConfig struct {
 	filter func(maps.Map) bool
 }
@@ -76,7 +100,6 @@ type Result struct {
 }
 
 func (mr *MemReader) ReadWithInfo(ctx context.Context, addr uint64, size uint64) (Result, error) {
-	fmt.Printf("addr: %X, size: %d\n", addr, size)
 	result := Result{
 		Data: make([]byte, size),
 	}
@@ -85,6 +108,9 @@ func (mr *MemReader) ReadWithInfo(ctx context.Context, addr uint64, size uint64)
 		return result, fmt.Errorf("getting maps: %w", err)
 	}
 	for _, m := range maps {
+		if !m.PermRead() {
+			continue
+		}
 		if m.Contains(addr) {
 			result.Map = &m
 		}
@@ -92,12 +118,24 @@ func (mr *MemReader) ReadWithInfo(ctx context.Context, addr uint64, size uint64)
 			continue
 		}
 	}
-	if result.Map == nil {
-		return result, fmt.Errorf("address 0x%X not within pid %d's maps", addr, mr.pid)
+	if result.Map == nil || (result.Map.End()-result.Map.Start() == 0) {
+		next, err := maps.FindNext(mr.cur)
+		if err != nil {
+			return result, fmt.Errorf("finding next map: %w", err)
+		}
+		return result, ReadError{
+			errorType: ErrEndOfMap,
+			address:   addr,
+			nextValid: next.Start(),
+		}
 	}
 
 	if size == 0 {
 		return result, nil
+	}
+
+	if addr+size > result.Map.End() {
+		size = result.Map.End() - addr
 	}
 
 	localIov := []unix.Iovec{{Base: &result.Data[0], Len: uint64(size)}}
@@ -105,6 +143,7 @@ func (mr *MemReader) ReadWithInfo(ctx context.Context, addr uint64, size uint64)
 
 	_, err = unix.ProcessVMReadv(mr.pid, localIov, remoteIov, 0)
 	if err != nil {
+		fmt.Printf("ProcessVMReadv failed at addr 0x%X size %d: %v, map: 0x%x\n", addr, size, err, result.Map.Start())
 		return result, fmt.Errorf("reading memory: %w", err)
 	}
 
