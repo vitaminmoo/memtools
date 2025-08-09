@@ -39,9 +39,11 @@ type MemReaderConfig struct {
 type MemReaderOption func(*MemReaderConfig)
 
 type MemReader struct {
-	pid int
-	cur uint64
-	c   MemReaderConfig
+	pid        int
+	cur        uint64
+	c          MemReaderConfig
+	maps       maps.Maps
+	currentMap *maps.Map
 }
 
 func NewMemReader(pid int, o ...MemReaderOption) *MemReader {
@@ -56,6 +58,16 @@ func NewMemReader(pid int, o ...MemReaderOption) *MemReader {
 	return m
 }
 
+func (mr *MemReader) refreshMaps() error {
+	maps, err := maps.Read(mr.pid)
+	if err != nil {
+		return fmt.Errorf("reading maps for pid %d: %w", mr.pid, err)
+	}
+	mr.maps = maps
+	mr.currentMap = nil
+	return nil
+}
+
 func (mr *MemReader) Read(b []byte) (int, error) {
 	if len(b) == 0 {
 		return 0, nil
@@ -65,16 +77,18 @@ func (mr *MemReader) Read(b []byte) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	copy(b[0:], result.Data)
-	mr.cur += uint64(size)
-	return size, nil
+	n := copy(b, result.Data)
+	mr.cur += uint64(n)
+	return n, err
 }
 
 func (mr *MemReader) Seek(offset int64, whence int) (int64, error) {
-	m, err := maps.Read(mr.pid)
-	if err != nil {
-		return 0, err
+	if mr.maps == nil {
+		if err := mr.refreshMaps(); err != nil {
+			return 0, err
+		}
 	}
+
 	var cur uint64
 	switch whence {
 	case 0: // SeekStart
@@ -82,14 +96,31 @@ func (mr *MemReader) Seek(offset int64, whence int) (int64, error) {
 	case 1: // SeekCurrent
 		cur = uint64(int64(mr.cur) + offset)
 	case 2: // SeekEnd
-		cur = m.End() + uint64(offset)
+		cur = mr.maps.End() + uint64(offset)
 	default:
 		return 0, fmt.Errorf("invalid whence value: %d", whence)
 	}
-	_, err = m.Find(cur)
+
+	m, err := mr.maps.Find(cur)
 	if err != nil {
-		return 0, err
+		if err := mr.refreshMaps(); err != nil {
+			return 0, err
+		}
+		m, err = mr.maps.Find(cur)
+		if err != nil {
+			next, findErr := mr.maps.FindNext(cur)
+			if findErr != nil {
+				return 0, err
+			}
+			cur = next.Start()
+			mr.currentMap = &next
+		} else {
+			mr.currentMap = &m
+		}
+	} else {
+		mr.currentMap = &m
 	}
+
 	mr.cur = cur
 	return int64(mr.cur), nil
 }
@@ -103,32 +134,48 @@ func (mr *MemReader) ReadWithInfo(ctx context.Context, addr uint64, size uint64)
 	result := Result{
 		Data: make([]byte, size),
 	}
-	maps, err := maps.Read(mr.pid)
-	if err != nil {
-		return result, fmt.Errorf("getting maps: %w", err)
+
+	findInMaps := func(maps maps.Maps) *maps.Map {
+		for i := range maps {
+			if maps[i].Contains(addr) && maps[i].PermRead() {
+				if mr.c.filter == nil || mr.c.filter(maps[i]) {
+					return &maps[i]
+				}
+			}
+		}
+		return nil
 	}
-	for _, m := range maps {
-		if !m.PermRead() {
-			continue
+
+	if mr.currentMap == nil || !mr.currentMap.Contains(addr) || !mr.currentMap.PermRead() || (mr.c.filter != nil && !mr.c.filter(*mr.currentMap)) {
+		var m *maps.Map
+		if mr.maps != nil {
+			m = findInMaps(mr.maps)
 		}
-		if m.Contains(addr) {
-			result.Map = &m
+
+		if m == nil {
+			if err := mr.refreshMaps(); err != nil {
+				return result, err
+			}
+			m = findInMaps(mr.maps)
 		}
-		if mr.c.filter != nil && !mr.c.filter(m) {
-			continue
+
+		if m == nil {
+			next, err := mr.maps.FindNext(addr)
+			if err != nil {
+				if mr.maps.End() <= addr {
+					return result, ReadError{errorType: ErrEndOfMemory, address: addr}
+				}
+				return result, fmt.Errorf("finding next map: %w", err)
+			}
+			return result, ReadError{
+				errorType: ErrEndOfMap,
+				address:   addr,
+				nextValid: next.Start(),
+			}
 		}
+		mr.currentMap = m
 	}
-	if result.Map == nil || (result.Map.End()-result.Map.Start() == 0) {
-		next, err := maps.FindNext(mr.cur)
-		if err != nil {
-			return result, fmt.Errorf("finding next map: %w", err)
-		}
-		return result, ReadError{
-			errorType: ErrEndOfMap,
-			address:   addr,
-			nextValid: next.Start(),
-		}
-	}
+	result.Map = mr.currentMap
 
 	if size == 0 {
 		return result, nil
@@ -137,15 +184,25 @@ func (mr *MemReader) ReadWithInfo(ctx context.Context, addr uint64, size uint64)
 	if addr+size > result.Map.End() {
 		size = result.Map.End() - addr
 	}
+	result.Data = result.Data[:size]
 
 	localIov := []unix.Iovec{{Base: &result.Data[0], Len: uint64(size)}}
 	remoteIov := []unix.RemoteIovec{{Base: uintptr(addr), Len: int(size)}}
 
-	_, err = unix.ProcessVMReadv(mr.pid, localIov, remoteIov, 0)
+	n, err := unix.ProcessVMReadv(mr.pid, localIov, remoteIov, 0)
 	if err != nil {
-		fmt.Printf("ProcessVMReadv failed at addr 0x%X size %d: %v, map: 0x%x\n", addr, size, err, result.Map.Start())
-		return result, fmt.Errorf("reading memory: %w", err)
+		mr.currentMap = nil // Invalidate map on error
+		next, findErr := mr.maps.FindNext(addr)
+		if findErr != nil {
+			return result, fmt.Errorf("finding next map after read error at 0x%X: %w", addr, findErr)
+		}
+		return result, ReadError{
+			errorType: ErrEndOfMap,
+			address:   addr,
+			nextValid: next.Start(),
+		}
 	}
+	result.Data = result.Data[:n]
 
 	return result, nil
 }

@@ -2,7 +2,6 @@
 package process
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -80,36 +79,65 @@ func (p *Process) Read(ctx context.Context, base uint64, v any) error {
 const findChunkSize = 4096
 
 func (p *Process) Find(ctx context.Context, search []byte) (int64, error) {
-	ix := 0
+	searchLen := len(search)
+	if searchLen == 0 {
+		return -1, fmt.Errorf("search pattern is empty")
+	}
+
 	m := NewMemReader(p.PID)
-	r := bufio.NewReader(m)
-	offset := int64(0)
-	for ix < len(search) {
-		b, err := r.ReadByte()
+	buffer := make([]byte, findChunkSize+searchLen-1)
+	overlap := make([]byte, 0, searchLen-1)
+	_, err := m.Seek(0, io.SeekStart)
+	if err != nil {
+		// No readable memory maps
+		return -1, fmt.Errorf("no readable memory found: %w", err)
+	}
+
+	for {
+		readAddr, err := m.Seek(0, io.SeekCurrent)
+		if err != nil {
+			return -1, fmt.Errorf("could not get current memory address: %w", err)
+		}
+
+		bytesRead, err := m.Read(buffer[len(overlap):])
 		if err != nil {
 			var readErr ReadError
-			if ok := errors.As(err, &readErr); ok {
-				switch readErr.errorType {
-				case ErrEndOfMap:
-					fmt.Printf("Skipping unreadable memory region at offset %d, next valid at %d\n", offset, readErr.nextValid)
-					// Skip unreadable memory regions
-					offset = int64(readErr.nextValid)
-					m.Seek(offset, io.SeekStart)
-					ix = 0
+			if errors.As(err, &readErr) {
+				if readErr.errorType == ErrEndOfMap {
+					fmt.Printf("Reached end of map at 0x%x, jumping to next valid region at 0x%x\n", readAddr, readErr.nextValid)
+					// Jump to the next valid memory region.
+					_, seekErr := m.Seek(int64(readErr.nextValid), io.SeekStart)
+					if seekErr != nil {
+						// This could happen if nextValid is invalid or we are at the end.
+						return -1, fmt.Errorf("pattern not found, seek failed: %w", seekErr)
+					}
+					overlap = overlap[:0] // Reset overlap after a jump.
 					continue
-				case ErrEndOfMemory:
-					return -1, fmt.Errorf("reached end of memory while searching for pattern")
+				} else if readErr.errorType == ErrEndOfMemory {
+					// Reached the end of all readable memory.
+					break
 				}
 			}
-			return -1, fmt.Errorf("reading byte at offset %d: %w", offset, err)
+			// Some other unexpected error.
+			return -1, fmt.Errorf("error reading memory at 0x%x: %w", readAddr, err)
 		}
-		if search[ix] == b {
-			ix++
+
+		if bytesRead == 0 {
+			continue
+		}
+
+		dataToSearch := buffer[:len(overlap)+bytesRead]
+
+		if idx := bytes.Index(dataToSearch, search); idx != -1 {
+			return readAddr + int64(idx) - int64(len(overlap)), nil
+		}
+
+		if len(dataToSearch) > searchLen-1 {
+			overlap = append(overlap[:0], dataToSearch[len(dataToSearch)-(searchLen-1):]...)
 		} else {
-			ix = 0
+			overlap = append(overlap[:0], dataToSearch...)
 		}
-		offset++
 	}
-	m.Seek(offset-int64(len(search)), 0) // Seeks to the beginning of the searched []byte
-	return offset - int64(len(search)), nil
+
+	return -1, fmt.Errorf("pattern not found")
 }
