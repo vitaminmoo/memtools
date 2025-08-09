@@ -179,9 +179,9 @@ func BenchmarkOptimizedScanner_Find_MultiPattern(b *testing.B) {
 	verifyAndLogResults(b, found, benchmarkMatches)
 }
 
-func BenchmarkBruteForceScanner_FindAll_MultiPattern(b *testing.B) {
+func BenchmarkSimpleScanner_Find_MultiPattern(b *testing.B) {
 	p := New(benchmarkPID)
-	p.Scanner = &BruteForceScanner{}
+	p.Scanner = &SimpleScanner{}
 
 	b.ResetTimer()
 	var found []Match
@@ -189,23 +189,7 @@ func BenchmarkBruteForceScanner_FindAll_MultiPattern(b *testing.B) {
 	for b.Loop() {
 		found, err = p.Find(b.Context(), benchmarkPatterns)
 		if err != nil {
-			b.Fatalf("FindAll failed: %v", err)
-		}
-	}
-	verifyAndLogResults(b, found, benchmarkMatches)
-}
-
-func BenchmarkOptimizedScanner_FindAll_MultiPattern(b *testing.B) {
-	p := New(benchmarkPID)
-	p.Scanner = &OptimizedScanner{}
-
-	b.ResetTimer()
-	var found []Match
-	var err error
-	for b.Loop() {
-		found, err = p.Find(b.Context(), benchmarkPatterns)
-		if err != nil {
-			b.Fatalf("FindAll failed: %v", err)
+			b.Fatalf("Find failed: %v", err)
 		}
 	}
 	verifyAndLogResults(b, found, benchmarkMatches)
@@ -227,7 +211,7 @@ func TestReadKnownValues(t *testing.T) {
 			t.Errorf("Value mismatch at address 0x%x:\nExpected: %x\nActual:   %x",
 				match.Address, expectedPattern, result.Data)
 		} else {
-			t.Logf("Successfully verified pattern %d at address 0x%x", i+1, match.Address)
+			t.Logf("Successfully verified pattern %d at address 0x%x in map %+v", i+1, match.Address, result.Map)
 		}
 	}
 }

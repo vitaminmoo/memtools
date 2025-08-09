@@ -192,6 +192,36 @@ func (m Map) Anonymous() bool {
 	return m.pathName == ""
 }
 
+func (m Map) String() string {
+	perms := []byte("----")
+	if m.PermRead() {
+		perms[0] = 'r'
+	}
+	if m.PermWrite() {
+		perms[1] = 'w'
+	}
+	if m.PermExecute() {
+		perms[2] = 'x'
+	}
+	if m.PermPrivate() {
+		perms[3] = 'p'
+	} else {
+		perms[3] = 's'
+	}
+
+	// Reconstruct the original /proc/[pid]/maps line format
+	return fmt.Sprintf("%x-%x %s %08x %02x:%02x %d\t%s",
+		m.addressStart,
+		m.addressEnd,
+		string(perms),
+		m.offset,
+		m.devMajor,
+		m.devMinor,
+		m.inode,
+		m.pathName,
+	)
+}
+
 type Maps []Map
 
 func (m Maps) Start() uint64 {
