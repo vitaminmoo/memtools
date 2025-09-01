@@ -3,12 +3,9 @@ package process
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
-	"runtime"
 	"sort"
-	"sync"
 
 	"github.com/vitaminmoo/memtools/maps"
 )
@@ -33,36 +30,28 @@ func (s *BruteForceScanner) Find(ctx context.Context, p *Process, patterns []Pat
 		return nil, fmt.Errorf("could not read memory maps: %w", err)
 	}
 
-	readableMaps := make(chan maps.Map, len(allMaps))
-	for _, m := range allMaps {
-		if m.PermRead() {
-			readableMaps <- m
+	var allMatches []Match
+	maxPatternLen := 0
+	for _, p := range patterns {
+		if len(p.Value) > maxPatternLen {
+			maxPatternLen = len(p.Value)
 		}
 	}
-	close(readableMaps)
+	buffer := make([]byte, findChunkSize+maxPatternLen-1)
 
-	var wg sync.WaitGroup
-	resultChan := make(chan []Match)
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	numWorkers := runtime.NumCPU()
-	for range numWorkers {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			s.findAllWorker(ctx, p, patterns, readableMaps, resultChan)
-		}()
-	}
-
-	go func() {
-		wg.Wait()
-		close(resultChan)
-	}()
-
-	var allMatches []Match
-	for matches := range resultChan {
-		allMatches = append(allMatches, matches...)
+	for _, m := range allMaps {
+		if !m.PermRead() {
+			continue
+		}
+		select {
+		case <-ctx.Done():
+			break
+		default:
+		}
+		matches, err := s.findAllInMap(ctx, p, patterns, m, buffer)
+		if err == nil && len(matches) > 0 {
+			allMatches = append(allMatches, matches...)
+		}
 	}
 
 	sort.Slice(allMatches, func(i, j int) bool {
@@ -72,103 +61,37 @@ func (s *BruteForceScanner) Find(ctx context.Context, p *Process, patterns []Pat
 	return allMatches, nil
 }
 
-func (s *BruteForceScanner) findAllWorker(ctx context.Context, p *Process, patterns []Pattern, mapsChan <-chan maps.Map, resultChan chan<- []Match) {
-	maxPatternLen := 0
-	for _, p := range patterns {
-		if len(p.Value) > maxPatternLen {
-			maxPatternLen = len(p.Value)
-		}
-	}
-	buffer := make([]byte, findChunkSize+maxPatternLen-1)
-
-	for m := range mapsChan {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		matches, err := s.findAllInMap(ctx, p, patterns, m, buffer)
-		if err == nil && len(matches) > 0 {
-			resultChan <- matches
-		}
-	}
-}
-
 func (s *BruteForceScanner) findAllInMap(ctx context.Context, p *Process, patterns []Pattern, m maps.Map, buffer []byte) ([]Match, error) {
 	var matches []Match
-	maxPatternLen := 0
-	for _, p := range patterns {
-		if len(p.Value) > maxPatternLen {
-			maxPatternLen = len(p.Value)
-		}
+
+	memReader := NewMemReader(p.PID)
+	_, err := memReader.Seek(int64(m.Start()), io.SeekStart)
+	if err != nil {
+		// Map may have disappeared, which is fine.
+		return nil, nil
 	}
 
-	overlap := make([]byte, 0, maxPatternLen-1)
+	mapData := make([]byte, m.End()-m.Start())
+	n, err := io.ReadFull(memReader, mapData)
+	if err != nil {
+		// Map changed during read, also fine.
+		return nil, nil
+	}
+	mapData = mapData[:n]
 
-	currentAddr := m.Start()
-	memReader := NewMemReader(p.PID, WithFilter(func(m maps.Map) bool {
-		return m.PathName() == "[heap]" || m.PathName() == ""
-	}))
-
-	for currentAddr < m.End() {
-
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
-		_, err := memReader.Seek(int64(currentAddr), io.SeekStart)
-		if err != nil {
-			var readErr ReadError
-			if errors.As(err, &readErr) {
-				currentAddr = readErr.nextValid
-				continue
+	for i, pattern := range patterns {
+		searchLen := len(pattern.Value)
+		for j := 0; j <= len(mapData)-searchLen; {
+			// Use findMasked which handles both masked and unmasked patterns
+			data := mapData[j:]
+			offset := findMasked(data, pattern)
+			if offset != -1 {
+				matchAddr := int64(m.Start()) + int64(j) + int64(offset)
+				matches = append(matches, Match{Address: matchAddr, PatternIndex: i, Map: m})
+				j += offset + 1
+			} else {
+				break // No more matches for this pattern in this map
 			}
-			return nil, fmt.Errorf("seek failed in map %s: %w", m.PathName(), err)
-		}
-
-		readStartAddr, err := memReader.Seek(0, io.SeekCurrent)
-		if err != nil {
-			return nil, err
-		}
-
-		bytesRead, err := memReader.Read(buffer[len(overlap):])
-		if err != nil {
-			var readErr ReadError
-			if errors.As(err, &readErr) {
-				if readErr.errorType == ErrEndOfMap {
-					currentAddr = readErr.nextValid
-					overlap = overlap[:0]
-					continue
-				}
-			}
-			return nil, fmt.Errorf("read failed in map %s: %w", m.PathName(), err)
-		}
-
-		if bytesRead == 0 {
-			currentAddr++
-			continue
-		}
-
-		dataToSearch := buffer[:len(overlap)+bytesRead]
-		for i, pattern := range patterns {
-			searchLen := len(pattern.Value)
-			for j := 0; j <= len(dataToSearch)-searchLen; j++ {
-				if findMasked(dataToSearch[j:j+searchLen], pattern) == 0 {
-					matchAddr := readStartAddr + int64(j) - int64(len(overlap))
-					matches = append(matches, Match{Address: matchAddr, PatternIndex: i, Map: m})
-				}
-			}
-		}
-
-		currentAddr = uint64(readStartAddr + int64(bytesRead))
-
-		if len(dataToSearch) > maxPatternLen-1 {
-			overlap = append(overlap[:0], dataToSearch[len(dataToSearch)-(maxPatternLen-1):]...)
-		} else {
-			overlap = append(overlap[:0], dataToSearch...)
 		}
 	}
 

@@ -20,7 +20,7 @@ var (
 	benchmarkMemSize  int64
 )
 
-const memSizeMB = 256
+const memSizeMB = 2048
 
 func TestMain(m *testing.M) {
 	// Setup
@@ -211,7 +211,7 @@ func TestReadKnownValues(t *testing.T) {
 			t.Errorf("Value mismatch at address 0x%x:\nExpected: %x\nActual:   %x",
 				match.Address, expectedPattern, result.Data)
 		} else {
-			t.Logf("Successfully verified pattern %d at address 0x%x in map %+v", i+1, match.Address, result.Map)
+			t.Logf("Successfully verified pattern %d at address 0x%x in map %s. Value: %x", i+1, match.Address, result.Map, result.Data)
 		}
 	}
 }

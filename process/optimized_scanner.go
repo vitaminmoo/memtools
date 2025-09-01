@@ -3,7 +3,6 @@ package process
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"runtime"
@@ -141,87 +140,35 @@ func (s *OptimizedScanner) findAllWorker(ctx context.Context, p *Process, patter
 
 func (s *OptimizedScanner) findAllInMap(ctx context.Context, p *Process, patterns []Pattern, anchors anchorTable, m maps.Map, buffer []byte) ([]Match, error) {
 	var matches []Match
-	maxPatternLen := 0
-	for _, p := range patterns {
-		if len(p.Value) > maxPatternLen {
-			maxPatternLen = len(p.Value)
-		}
+
+	memReader := NewMemReader(p.PID)
+	_, err := memReader.Seek(int64(m.Start()), io.SeekStart)
+	if err != nil {
+		return nil, nil // Map disappeared, fine to ignore.
 	}
 
-	overlap := make([]byte, 0, maxPatternLen-1)
+	mapData := make([]byte, m.End()-m.Start())
+	n, err := io.ReadFull(memReader, mapData)
+	if err != nil {
+		return nil, nil // Map changed, fine to ignore.
+	}
+	mapData = mapData[:n]
 
-	currentAddr := m.Start()
-	memReader := NewMemReader(p.PID, WithFilter(func(m maps.Map) bool {
-		return m.PathName() == "[heap]" || m.PathName() == ""
-	}))
-
-	for currentAddr < m.End() {
-
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
-		}
-
-		_, err := memReader.Seek(int64(currentAddr), io.SeekStart)
-		if err != nil {
-			var readErr ReadError
-			if errors.As(err, &readErr) {
-				currentAddr = readErr.nextValid
-				continue
-			}
-			return nil, fmt.Errorf("seek failed in map %s: %w", m.PathName(), err)
-		}
-
-		readStartAddr, err := memReader.Seek(0, io.SeekCurrent)
-		if err != nil {
-			return nil, err
-		}
-
-		bytesRead, err := memReader.Read(buffer[len(overlap):])
-		if err != nil {
-			var readErr ReadError
-			if errors.As(err, &readErr) {
-				if readErr.errorType == ErrEndOfMap {
-					currentAddr = readErr.nextValid
-					overlap = overlap[:0]
-					continue
-				}
-			}
-			return nil, fmt.Errorf("read failed in map %s: %w", m.PathName(), err)
-		}
-
-		if bytesRead == 0 {
-			currentAddr++
-			continue
-		}
-
-		dataToSearch := buffer[:len(overlap)+bytesRead]
-
-		// The optimized search logic
-		for i, b := range dataToSearch {
-			if anchorInfos, ok := anchors[b]; ok {
-				for _, info := range anchorInfos {
-					// Potential match found, check if the full pattern fits
-					patternStartIndex := i - info.anchorOffset
-					patternEndIndex := patternStartIndex + info.patternLen
-					if patternStartIndex >= 0 && patternEndIndex <= len(dataToSearch) {
-						// Perform full masked comparison
-						if findMasked(dataToSearch[patternStartIndex:patternEndIndex], patterns[info.patternIndex]) == 0 {
-							matchAddr := readStartAddr + int64(patternStartIndex) - int64(len(overlap))
-							matches = append(matches, Match{Address: matchAddr, PatternIndex: info.patternIndex, Map: m})
-						}
+	// The optimized search logic
+	for i, b := range mapData {
+		if anchorInfos, ok := anchors[b]; ok {
+			for _, info := range anchorInfos {
+				// Potential match found, check if the full pattern fits
+				patternStartIndex := i - info.anchorOffset
+				patternEndIndex := patternStartIndex + info.patternLen
+				if patternStartIndex >= 0 && patternEndIndex <= len(mapData) {
+					// Perform full masked comparison
+					if findMasked(mapData[patternStartIndex:patternEndIndex], patterns[info.patternIndex]) == 0 {
+						matchAddr := int64(m.Start()) + int64(patternStartIndex)
+						matches = append(matches, Match{Address: matchAddr, PatternIndex: info.patternIndex, Map: m})
 					}
 				}
 			}
-		}
-
-		currentAddr = uint64(readStartAddr + int64(bytesRead))
-
-		if len(dataToSearch) > maxPatternLen-1 {
-			overlap = append(overlap[:0], dataToSearch[len(dataToSearch)-(maxPatternLen-1):]...)
-		} else {
-			overlap = append(overlap[:0], dataToSearch...)
 		}
 	}
 
