@@ -37,7 +37,6 @@ func (s *BruteForceScanner) Find(ctx context.Context, p *Process, patterns []Pat
 			maxPatternLen = len(p.Value)
 		}
 	}
-	buffer := make([]byte, findChunkSize+maxPatternLen-1)
 
 	for _, m := range allMaps {
 		if !m.PermRead() {
@@ -45,10 +44,10 @@ func (s *BruteForceScanner) Find(ctx context.Context, p *Process, patterns []Pat
 		}
 		select {
 		case <-ctx.Done():
-			break
+			return allMatches, ctx.Err()
 		default:
 		}
-		matches, err := s.findAllInMap(ctx, p, patterns, m, buffer)
+		matches, err := s.findAllInMap(p, patterns, m)
 		if err == nil && len(matches) > 0 {
 			allMatches = append(allMatches, matches...)
 		}
@@ -61,7 +60,7 @@ func (s *BruteForceScanner) Find(ctx context.Context, p *Process, patterns []Pat
 	return allMatches, nil
 }
 
-func (s *BruteForceScanner) findAllInMap(ctx context.Context, p *Process, patterns []Pattern, m maps.Map, buffer []byte) ([]Match, error) {
+func (s *BruteForceScanner) findAllInMap(p *Process, patterns []Pattern, m maps.Map) ([]Match, error) {
 	var matches []Match
 
 	memReader := NewMemReader(p.PID)
