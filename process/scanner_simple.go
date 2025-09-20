@@ -13,7 +13,7 @@ import (
 // SimpleScanner implements the Scanner interface with a basic, non-parallel approach.
 type SimpleScanner struct{}
 
-func (s *SimpleScanner) Find(ctx context.Context, p *Process, patterns []Pattern) ([]Match, error) {
+func (s *SimpleScanner) Find(ctx context.Context, p *Process, reader *MemReader, patterns []Pattern) ([]Match, error) {
 	for i, pattern := range patterns {
 		if len(pattern.Value) == 0 {
 			return nil, fmt.Errorf("pattern %d is empty", i)

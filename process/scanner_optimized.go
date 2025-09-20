@@ -26,7 +26,7 @@ type anchorInfo struct {
 	anchorOffset int
 }
 
-func (s *OptimizedScanner) Find(ctx context.Context, p *Process, patterns []Pattern) ([]Match, error) {
+func (s *OptimizedScanner) Find(ctx context.Context, p *Process, reader *MemReader, patterns []Pattern) ([]Match, error) {
 	for i, pattern := range patterns {
 		if len(pattern.Value) == 0 {
 			return nil, fmt.Errorf("pattern %d is empty", i)

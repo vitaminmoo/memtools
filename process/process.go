@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -30,7 +29,7 @@ type Match struct {
 
 // Scanner defines the interface for memory scanning implementations.
 type Scanner interface {
-	Find(ctx context.Context, p *Process, patterns []Pattern) ([]Match, error)
+	Find(ctx context.Context, p *Process, reader *MemReader, patterns []Pattern) ([]Match, error)
 }
 
 // Process represents a target process.
@@ -43,7 +42,7 @@ type Process struct {
 func New(pid int) *Process {
 	return &Process{
 		PID:     pid,
-		Scanner: &BruteForceScanner{},
+		Scanner: &SimpleScanner{},
 	}
 }
 
@@ -79,7 +78,7 @@ func FromName(name string) (*Process, error) {
 			continue
 		}
 
-		exe := filepath.Base(strings.ReplaceAll(string(args[0]), "\\\\", "/"))
+		exe := filepath.Base(strings.ReplaceAll(string(args[0]), "\\", "/"))
 
 		if exe == name {
 			return New(pid), nil
@@ -90,9 +89,7 @@ func FromName(name string) (*Process, error) {
 }
 
 // Read reads data from the process's memory at a given base address into a struct.
-func (p *Process) Read(ctx context.Context, base uint64, v any) error {
-	reader := NewMemReader(p.PID)
-	reader.Seek(int64(base), io.SeekStart)
+func (p *Process) Read(ctx context.Context, reader *MemReader, v any) error {
 	err := sparsestruct.Unmarshal(reader, v)
 	if err != nil {
 		return fmt.Errorf("unmarshalling sparse struct: %w", err)
@@ -101,6 +98,6 @@ func (p *Process) Read(ctx context.Context, base uint64, v any) error {
 }
 
 // Find delegates to the configured scanner to find all occurrences of multiple patterns.
-func (p *Process) Find(ctx context.Context, patterns []Pattern) ([]Match, error) {
-	return p.Scanner.Find(ctx, p, patterns)
+func (p *Process) Find(ctx context.Context, reader *MemReader, patterns []Pattern) ([]Match, error) {
+	return p.Scanner.Find(ctx, p, reader, patterns)
 }

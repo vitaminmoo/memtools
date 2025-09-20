@@ -150,12 +150,13 @@ func verifyAndLogResults(b *testing.B, foundMatches []Match, expectedMatches []M
 func BenchmarkBruteForceScanner_Find_MultiPattern(b *testing.B) {
 	p := New(benchmarkPID)
 	p.Scanner = &BruteForceScanner{}
+	reader := NewMemReader(p.PID)
 
 	b.ResetTimer()
 	var found []Match
 	var err error
 	for b.Loop() {
-		found, err = p.Find(b.Context(), benchmarkPatterns)
+		found, err = p.Find(b.Context(), reader, benchmarkPatterns)
 		if err != nil {
 			b.Fatalf("Find failed: %v", err)
 		}
@@ -166,12 +167,13 @@ func BenchmarkBruteForceScanner_Find_MultiPattern(b *testing.B) {
 func BenchmarkOptimizedScanner_Find_MultiPattern(b *testing.B) {
 	p := New(benchmarkPID)
 	p.Scanner = &OptimizedScanner{}
+	reader := NewMemReader(p.PID)
 
 	b.ResetTimer()
 	var found []Match
 	var err error
 	for b.Loop() {
-		found, err = p.Find(b.Context(), benchmarkPatterns)
+		found, err = p.Find(b.Context(), reader, benchmarkPatterns)
 		if err != nil {
 			b.Fatalf("Find failed: %v", err)
 		}
@@ -182,12 +184,13 @@ func BenchmarkOptimizedScanner_Find_MultiPattern(b *testing.B) {
 func BenchmarkSimpleScanner_Find_MultiPattern(b *testing.B) {
 	p := New(benchmarkPID)
 	p.Scanner = &SimpleScanner{}
+	reader := NewMemReader(p.PID)
 
 	b.ResetTimer()
 	var found []Match
 	var err error
 	for b.Loop() {
-		found, err = p.Find(b.Context(), benchmarkPatterns)
+		found, err = p.Find(b.Context(), reader, benchmarkPatterns)
 		if err != nil {
 			b.Fatalf("Find failed: %v", err)
 		}
