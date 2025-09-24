@@ -1,7 +1,6 @@
 package sparsestruct_test
 
 import (
-	"bytes"
 	"math"
 	"testing"
 
@@ -12,17 +11,17 @@ import (
 
 func TestBasic(t *testing.T) {
 	t.Parallel()
-	rawData := []byte{0xFF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
-	data := bytes.NewReader(rawData)
+	data := []byte{0xFF, 0xFF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
 
 	var v struct {
 		Field0 uint8
-		Field1 uint8 `offset:"1"`
-		Field2 uint8 `offset:"0b10"`
+		// skip one
+		Field1 uint8 `offset:"0x02"`
+		Field2 uint8 `offset:"0x03"`
 		Field3 uint8
 		Field4 uint8
 		// skip one
-		Field6 uint8 `offset:"0x06"`
+		Field6 uint8 `offset:"0x07"`
 	}
 
 	err := sparsestruct.Unmarshal(data, &v)
@@ -38,12 +37,11 @@ func TestBasic(t *testing.T) {
 
 func TestPointer(t *testing.T) {
 	t.Parallel()
-	rawData := []byte{
+	data := []byte{
 		0x10, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 	}
-	data := bytes.NewReader(rawData)
 	type DestStruct struct {
 		Field1 uint8
 		Field2 uint8 `offset:"4"`
@@ -388,7 +386,7 @@ func TestIntegerTypes(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := sparsestruct.Unmarshal(bytes.NewReader(tc.data), tc.v)
+			err := sparsestruct.Unmarshal(tc.data, tc.v)
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, tc.v)
 		})

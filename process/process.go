@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/vitaminmoo/memtools/maps"
-	"github.com/vitaminmoo/memtools/sparsestruct"
+	"github.com/vitaminmoo/memtools/memory"
 )
 
 // Pattern holds a value and a mask for byte-level masked searching.
@@ -22,14 +22,13 @@ type Pattern struct {
 
 // Match represents a found occurrence, containing its address and the index of the pattern that it matched.
 type Match struct {
-	Address      int64
-	PatternIndex int
-	Map          maps.Map
+	Address int64
+	Map     maps.Map
 }
 
 // Scanner defines the interface for memory scanning implementations.
 type Scanner interface {
-	Find(ctx context.Context, p *Process, reader *MemReader, patterns []Pattern) ([]Match, error)
+	Find(ctx context.Context, r *memory.Buffer, pattern Pattern) (Match, error)
 }
 
 // Process represents a target process.
@@ -89,15 +88,18 @@ func FromName(name string) (*Process, error) {
 }
 
 // Read reads data from the process's memory at a given base address into a struct.
-func (p *Process) Read(ctx context.Context, reader *MemReader, v any) error {
-	err := sparsestruct.Unmarshal(reader, v)
+/*
+func (p *Process) Read(ctx context.Context, mem *Buffer, v any) error {
+	b, err := mem.Next(int(sparsestruct.Size(v)))
+	err = sparsestruct.Unmarshal(b, v)
 	if err != nil {
 		return fmt.Errorf("unmarshalling sparse struct: %w", err)
 	}
 	return nil
 }
+*/
 
 // Find delegates to the configured scanner to find all occurrences of multiple patterns.
-func (p *Process) Find(ctx context.Context, reader *MemReader, patterns []Pattern) ([]Match, error) {
-	return p.Scanner.Find(ctx, p, reader, patterns)
+func (p *Process) Find(ctx context.Context, buffer *memory.Buffer, pattern Pattern) (Match, error) {
+	return p.Scanner.Find(ctx, buffer, pattern)
 }

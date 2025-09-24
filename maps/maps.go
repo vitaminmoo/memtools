@@ -42,7 +42,7 @@ func Read(pid int) (Maps, error) {
 			continue
 		}
 
-		var addressStart, addressEnd uint64
+		var addressStart, addressEnd uintptr
 		if _, err := fmt.Sscanf(addrParts[0], "%x", &addressStart); err != nil {
 			continue
 		}
@@ -100,6 +100,7 @@ func Read(pid int) (Maps, error) {
 		}
 
 		maps = append(maps, Map{
+			PID:          pid,
 			addressStart: addressStart,
 			addressEnd:   addressEnd,
 			perms:        perms,
@@ -118,8 +119,9 @@ func Read(pid int) (Maps, error) {
 }
 
 type Map struct {
-	addressStart uint64
-	addressEnd   uint64
+	PID          int
+	addressStart uintptr
+	addressEnd   uintptr
 	perms        int8
 	offset       uint64
 	devMajor     int
@@ -128,15 +130,15 @@ type Map struct {
 	pathName     string
 }
 
-func (m Map) Start() uint64 {
+func (m Map) Start() uintptr {
 	return m.addressStart
 }
 
-func (m Map) End() uint64 {
+func (m Map) End() uintptr {
 	return m.addressEnd
 }
 
-func (m Map) Contains(addr uint64) bool {
+func (m Map) Contains(addr uintptr) bool {
 	return m.Start() <= addr && addr < m.End()
 }
 
@@ -224,21 +226,21 @@ func (m Map) String() string {
 
 type Maps []Map
 
-func (m Maps) Start() uint64 {
+func (m Maps) Start() uintptr {
 	if len(m) == 0 {
 		return 0
 	}
 	return m[0].Start()
 }
 
-func (m Maps) End() uint64 {
+func (m Maps) End() uintptr {
 	if len(m) == 0 {
 		return 0
 	}
 	return m[len(m)-1].End()
 }
 
-func (m Maps) Find(addr uint64) (Map, error) {
+func (m Maps) Find(addr uintptr) (Map, error) {
 	for _, m := range m {
 		if m.Contains(addr) {
 			return m, nil
@@ -247,7 +249,7 @@ func (m Maps) Find(addr uint64) (Map, error) {
 	return Map{}, ErrInvalidAddress
 }
 
-func (m Maps) FindNext(addr uint64) (Map, error) {
+func (m Maps) FindNext(addr uintptr) (Map, error) {
 	for _, m := range m {
 		if m.Start() > addr {
 			return m, nil
