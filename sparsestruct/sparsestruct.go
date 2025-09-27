@@ -13,6 +13,31 @@ import (
 	"strings"
 )
 
+const tag = "offset"
+
+func Size(v any) (int, error) {
+	var offset uintptr
+	rv := reflect.ValueOf(v)
+	if rv.Kind() != reflect.Pointer || rv.IsNil() {
+		return 0, fmt.Errorf("non-pointer %T", v)
+	}
+	elem := rv.Elem()
+	if elem.Kind() != reflect.Struct {
+		return 0, fmt.Errorf("non-struct pointer %T", v)
+	}
+	t := elem.Type()
+	for i := range elem.NumField() {
+		field := t.Field(i)
+		fieldVal := elem.Field(i)
+		_, x, err := parseTag(fieldVal, field, offset, 0)
+		if err != nil {
+			return 0, fmt.Errorf("parsing tag for field %s: %w", field.Name, err)
+		}
+		offset += x + uintptr(fieldVal.Type().Size())
+	}
+	return int(offset), nil
+}
+
 // Unmarshal unmarshals a byte slice into a struct.
 //
 // You may specify an offset tag per v field with either `le` or `be` to specify the byte order.
@@ -28,12 +53,12 @@ func Unmarshal(data []byte, v any) error {
 func unmarshal(addr uintptr, data []byte, v any) error {
 	rv := reflect.ValueOf(v)
 	if rv.Kind() != reflect.Pointer || rv.IsNil() {
-		return fmt.Errorf("sparsestruct: Unmarshal(non-pointer %T)", v)
+		return fmt.Errorf("non-pointer %T", v)
 	}
 
 	elem := rv.Elem()
 	if elem.Kind() != reflect.Struct {
-		return fmt.Errorf("sparsestruct: Unmarshal(non-struct pointer %T)", v)
+		return fmt.Errorf("non-struct pointer %T", v)
 	}
 
 	t := elem.Type()
@@ -44,35 +69,11 @@ func unmarshal(addr uintptr, data []byte, v any) error {
 		field := t.Field(i)
 		fieldVal := elem.Field(i)
 
-		if !fieldVal.CanSet() {
-			fmt.Printf("%+v: %v\n", fieldVal.Type(), fieldVal.Kind())
-			return fmt.Errorf("sparsestruct: Unmarshal(non-settable field %s)", field.Name)
-		}
-
-		var byteOrder binary.ByteOrder = binary.NativeEndian
-
-		offsetTag := field.Tag.Get("offset")
-		if offsetTag != "" {
-			offsetParts := strings.Split(offsetTag, ",")
-			if len(offsetParts) < 1 {
-				return fmt.Errorf("sparsestruct: invalid offset tag on field %s: %s", field.Name, offsetTag)
-			}
-			offsetStr := offsetParts[0]
-			offsetVal, err := strconv.ParseUint(offsetStr, 0, 64)
-			if err != nil {
-				return fmt.Errorf("sparsestruct: invalid offset tag on field %s: %w", field.Name, err)
-			}
-			offset = addr + uintptr(offsetVal)
-			for _, part := range offsetParts[1:] {
-				switch part {
-				case "le":
-					byteOrder = binary.LittleEndian
-				case "be":
-					byteOrder = binary.BigEndian
-				default:
-					return fmt.Errorf("sparsestruct: invalid offset tag on field %s: %s", field.Name, offsetTag)
-				}
-			}
+		var byteOrder binary.ByteOrder
+		var err error
+		byteOrder, offset, err = parseTag(fieldVal, field, offset, addr)
+		if err != nil {
+			return fmt.Errorf("parsing tags: %w", err)
 		}
 
 		switch fieldVal.Kind() {
@@ -88,7 +89,7 @@ func unmarshal(addr uintptr, data []byte, v any) error {
 				var pAddr uint64
 				n, err := binary.Decode(data[offset:], byteOrder, &pAddr)
 				if err != nil {
-					return fmt.Errorf("sparsestruct: reading address for field %s: %w", field.Name, err)
+					return fmt.Errorf("reading address for field %s: %w", field.Name, err)
 				}
 				// data = data[offset+uintptr(n):]
 				offset += uintptr(n)
@@ -97,13 +98,13 @@ func unmarshal(addr uintptr, data []byte, v any) error {
 				pgVal.FieldByName("Data").Set(reflect.ValueOf(data))
 				continue
 			} else {
-				return fmt.Errorf("sparsestruct: unsupported pointer type for field %s: %s", field.Name, field.Type)
+				return fmt.Errorf("unsupported pointer type for field %s: %s", field.Name, field.Type)
 			}
 		case reflect.Int8:
 			var val int8
 			n, err := binary.Decode(data[offset:], byteOrder, &val)
 			if err != nil {
-				return fmt.Errorf("sparsestruct: reading int8 for field %s: %w", field.Name, err)
+				return fmt.Errorf("reading int8 for field %s: %w", field.Name, err)
 			}
 			// data = data[offset+uintptr(n):]
 			offset += uintptr(n)
@@ -112,7 +113,7 @@ func unmarshal(addr uintptr, data []byte, v any) error {
 			var val int16
 			n, err := binary.Decode(data[offset:], byteOrder, &val)
 			if err != nil {
-				return fmt.Errorf("sparsestruct: reading int16 for field %s: %w", field.Name, err)
+				return fmt.Errorf("reading int16 for field %s: %w", field.Name, err)
 			}
 			// data = data[offset+uintptr(n):]
 			offset += uintptr(n)
@@ -121,7 +122,7 @@ func unmarshal(addr uintptr, data []byte, v any) error {
 			var val int32
 			n, err := binary.Decode(data[offset:], byteOrder, &val)
 			if err != nil {
-				return fmt.Errorf("sparsestruct: reading int32 for field %s: %w", field.Name, err)
+				return fmt.Errorf("reading int32 for field %s: %w", field.Name, err)
 			}
 			// data = data[offset+uintptr(n):]
 			offset += uintptr(n)
@@ -130,7 +131,7 @@ func unmarshal(addr uintptr, data []byte, v any) error {
 			var val int64
 			n, err := binary.Decode(data[offset:], byteOrder, &val)
 			if err != nil {
-				return fmt.Errorf("sparsestruct: reading int64 for field %s: %w", field.Name, err)
+				return fmt.Errorf("reading int64 for field %s: %w", field.Name, err)
 			}
 			// data = data[offset+uintptr(n):]
 			offset += uintptr(n)
@@ -141,7 +142,7 @@ func unmarshal(addr uintptr, data []byte, v any) error {
 			fmt.Printf("Data: % x\n", data[offset:])
 			n, err := binary.Decode(data[offset:], byteOrder, &val)
 			if err != nil {
-				return fmt.Errorf("sparsestruct: reading uint8 for field %s: %w", field.Name, err)
+				return fmt.Errorf("reading uint8 for field %s: %w", field.Name, err)
 			}
 			// data = data[offset+uintptr(n):]
 			offset += uintptr(n)
@@ -150,7 +151,7 @@ func unmarshal(addr uintptr, data []byte, v any) error {
 			var val uint16
 			n, err := binary.Decode(data[offset:], byteOrder, &val)
 			if err != nil {
-				return fmt.Errorf("sparsestruct: reading uint16 for field %s: %w", field.Name, err)
+				return fmt.Errorf("reading uint16 for field %s: %w", field.Name, err)
 			}
 			// data = data[offset+uintptr(n):]
 			offset += uintptr(n)
@@ -159,7 +160,7 @@ func unmarshal(addr uintptr, data []byte, v any) error {
 			var val uint32
 			n, err := binary.Decode(data[offset:], byteOrder, &val)
 			if err != nil {
-				return fmt.Errorf("sparsestruct: reading uint32 for field %s: %w", field.Name, err)
+				return fmt.Errorf("reading uint32 for field %s: %w", field.Name, err)
 			}
 			// data = data[offset+uintptr(n):]
 			offset += uintptr(n)
@@ -168,7 +169,7 @@ func unmarshal(addr uintptr, data []byte, v any) error {
 			var val uint64
 			n, err := binary.Decode(data[offset:], byteOrder, &val)
 			if err != nil {
-				return fmt.Errorf("sparsestruct: reading uint64 for field %s: %w", field.Name, err)
+				return fmt.Errorf("reading uint64 for field %s: %w", field.Name, err)
 			}
 			// data = data[offset+uintptr(n):]
 			offset += uintptr(n)
@@ -179,6 +180,40 @@ func unmarshal(addr uintptr, data []byte, v any) error {
 	}
 
 	return nil
+}
+
+func parseTag(fieldVal reflect.Value, field reflect.StructField, offset uintptr, addr uintptr) (binary.ByteOrder, uintptr, error) {
+	if !fieldVal.CanSet() {
+		fmt.Printf("%+v: %v\n", fieldVal.Type(), fieldVal.Kind())
+		return nil, 0, fmt.Errorf("non-settable field %s", field.Name)
+	}
+
+	var byteOrder binary.ByteOrder = binary.NativeEndian
+
+	offsetTag := field.Tag.Get(tag)
+	if offsetTag != "" {
+		offsetParts := strings.Split(offsetTag, ",")
+		if len(offsetParts) < 1 {
+			return nil, 0, fmt.Errorf("invalid offset tag on field %s: %s", field.Name, offsetTag)
+		}
+		offsetStr := offsetParts[0]
+		offsetVal, err := strconv.ParseUint(offsetStr, 0, 64)
+		if err != nil {
+			return nil, 0, fmt.Errorf("invalid offset tag on field %s: %w", field.Name, err)
+		}
+		offset = addr + uintptr(offsetVal)
+		for _, part := range offsetParts[1:] {
+			switch part {
+			case "le":
+				byteOrder = binary.LittleEndian
+			case "be":
+				byteOrder = binary.BigEndian
+			default:
+				return nil, 0, fmt.Errorf("invalid offset tag on field %s: %s", field.Name, offsetTag)
+			}
+		}
+	}
+	return byteOrder, offset, nil
 }
 
 type PointerGetter[T any] struct {

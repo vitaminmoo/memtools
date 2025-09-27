@@ -248,12 +248,3 @@ func (m Maps) Find(addr uintptr) (Map, error) {
 	}
 	return Map{}, ErrInvalidAddress
 }
-
-func (m Maps) FindNext(addr uintptr) (Map, error) {
-	for _, m := range m {
-		if m.Start() > addr {
-			return m, nil
-		}
-	}
-	return Map{}, ErrInvalidAddress
-}

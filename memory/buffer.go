@@ -54,6 +54,14 @@ func (b *Buffer) Peek() []byte {
 	return b.data[b.i:]
 }
 
+func (b *Buffer) Rewind(l int) {
+	if l > b.i {
+		b.i = 0
+	} else {
+		b.i -= l
+	}
+}
+
 // Discard consumes data in the current buffer
 func (b *Buffer) Discard(n int) {
 	b.i += n
@@ -79,7 +87,7 @@ func (b *Buffer) Refill() error {
 	}
 	toRead := min(cap(b.data)-n, remaining)
 
-	localIov := []unix.Iovec{{Base: &b.data[b.i], Len: uint64(toRead)}}
+	localIov := []unix.Iovec{{Base: &b.data[n], Len: uint64(toRead)}}
 	remoteIov := []unix.RemoteIovec{{Base: b.addr, Len: int(toRead)}}
 	read, err := unix.ProcessVMReadv(b.pid, localIov, remoteIov, 0)
 	if err != nil {

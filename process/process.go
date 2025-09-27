@@ -12,6 +12,7 @@ import (
 
 	"github.com/vitaminmoo/memtools/maps"
 	"github.com/vitaminmoo/memtools/memory"
+	"github.com/vitaminmoo/memtools/sparsestruct"
 )
 
 // Pattern holds a value and a mask for byte-level masked searching.
@@ -40,8 +41,7 @@ type Process struct {
 // New creates a new Process with a default BruteForceScanner.
 func New(pid int) *Process {
 	return &Process{
-		PID:     pid,
-		Scanner: &SimpleScanner{},
+		PID: pid,
 	}
 }
 
@@ -88,18 +88,29 @@ func FromName(name string) (*Process, error) {
 }
 
 // Read reads data from the process's memory at a given base address into a struct.
-/*
-func (p *Process) Read(ctx context.Context, mem *Buffer, v any) error {
-	b, err := mem.Next(int(sparsestruct.Size(v)))
+
+func (p *Process) Read(ctx context.Context, addr uintptr, v any) error {
+	maps, err := maps.Read(p.PID)
+	if err != nil {
+		return fmt.Errorf("reading maps: %w", err)
+	}
+
+	targetMap, err := maps.Find(addr)
+	if err != nil {
+		return fmt.Errorf("finding target map: %w", err)
+	}
+
+	// We probably need sparsestruct to be able to hit multiple maps
+	mem := memory.NewBuffer(p.PID, targetMap.Start(), targetMap.End(), 1024*1024)
+
+	size, err := sparsestruct.Size(v)
+	if err != nil {
+		return fmt.Errorf("getting size of type: %w", err)
+	}
+	b, err := mem.Next(size)
 	err = sparsestruct.Unmarshal(b, v)
 	if err != nil {
 		return fmt.Errorf("unmarshalling sparse struct: %w", err)
 	}
 	return nil
-}
-*/
-
-// Find delegates to the configured scanner to find all occurrences of multiple patterns.
-func (p *Process) Find(ctx context.Context, buffer *memory.Buffer, pattern Pattern) (Match, error) {
-	return p.Scanner.Find(ctx, buffer, pattern)
 }
