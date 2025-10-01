@@ -54,7 +54,9 @@ func Unmarshal(r io.ReadSeeker, addr uintptr, v any) error {
 	if err != nil {
 		return fmt.Errorf("getting size of %T: %w", v, err)
 	}
-	fmt.Printf("reading %d bytes from address %0xx\n", size, addr)
+	if size == 0 {
+		return fmt.Errorf("zero size for %T", v)
+	}
 	r.Seek(int64(addr), io.SeekStart)
 	data := make([]byte, size)
 	n, err := r.Read(data)
@@ -114,8 +116,8 @@ func Unmarshal(r io.ReadSeeker, addr uintptr, v any) error {
 					pgVal.FieldByName("AddressValue").SetUint(pAddr)
 					pgVal.FieldByName("Data").Set(reflect.ValueOf(data))
 
-					//method := fieldVal.MethodByName("Read")
-					//method.Call([]reflect.Value{})
+					method := fieldVal.MethodByName("Read")
+					method.Call([]reflect.Value{reflect.ValueOf(r)})
 					continue
 				} else if field.Type.Elem().Name() == "StringPointer" {
 					if fieldVal.IsNil() {
@@ -134,8 +136,8 @@ func Unmarshal(r io.ReadSeeker, addr uintptr, v any) error {
 					spVal.FieldByName("AddressValue").SetUint(pAddr)
 					spVal.FieldByName("Data").Set(reflect.ValueOf(data))
 
-					//method := fieldVal.MethodByName("Read")
-					//method.Call([]reflect.Value{})
+					method := fieldVal.MethodByName("Read")
+					method.Call([]reflect.Value{reflect.ValueOf(r)})
 					continue
 				} else {
 					return fmt.Errorf("unsupported pointer type for field %s: %s", field.Name, field.Type)
@@ -264,9 +266,7 @@ func (p *PointerGetter[T]) Address() uintptr {
 	return p.AddressValue
 }
 
-/*
-// Read is a no-op for a preloaded value.
-func (p *PointerGetter[T]) Read() {
+func (p *PointerGetter[T]) Read(r io.ReadSeeker) {
 	if p.AddressValue == 0 {
 		p.Error = fmt.Errorf("pointer address is zero")
 		return
@@ -274,9 +274,8 @@ func (p *PointerGetter[T]) Read() {
 	if p.Val == nil {
 		p.Val = new(T)
 	}
-	p.Error = Unmarshal(0, p.Data, p.Val)
+	p.Error = Unmarshal(r, p.Address(), p.Val)
 }
-*/
 
 func (p PointerGetter[T]) MarshalJSON() ([]byte, error) {
 	type Alias PointerGetter[T]
@@ -321,9 +320,7 @@ func (p *StringPointer) Address() uintptr {
 	return p.AddressValue
 }
 
-/*
-// Read is a no-op for a preloaded value.
-func (p *StringPointer) Read() {
+func (p *StringPointer) Read(r io.ReadSeeker) {
 	if p.AddressValue == 0 {
 		p.Error = fmt.Errorf("pointer address is zero")
 		return
@@ -331,14 +328,20 @@ func (p *StringPointer) Read() {
 	if p.Val == nil {
 		p.Val = new(string)
 	}
-	for _, b := range p.Data {
+	buf := make([]byte, 1024)
+	r.Seek(int64(p.AddressValue), io.SeekStart)
+	n, err := r.Read(buf)
+	if err != nil {
+		p.Error = err
+		return
+	}
+	for _, b := range buf[:n] {
 		if b == 0 {
 			break
 		}
 		*p.Val += string(b)
 	}
 }
-*/
 
 func (p StringPointer) MarshalJSON() ([]byte, error) {
 	type Alias StringPointer
