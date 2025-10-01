@@ -4,7 +4,9 @@ package process
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,6 +15,7 @@ import (
 	"github.com/vitaminmoo/memtools/maps"
 	"github.com/vitaminmoo/memtools/memory"
 	"github.com/vitaminmoo/memtools/sparsestruct"
+	"golang.org/x/sys/unix"
 )
 
 // Pattern holds a value and a mask for byte-level masked searching.
@@ -36,6 +39,7 @@ type Scanner interface {
 type Process struct {
 	PID     int
 	Scanner Scanner
+	i       int64
 }
 
 // New creates a new Process with a default BruteForceScanner.
@@ -87,30 +91,83 @@ func FromName(name string) (*Process, error) {
 	return nil, fmt.Errorf("process %q not found", name)
 }
 
-// Read reads data from the process's memory at a given base address into a struct.
-
-func (p *Process) Read(ctx context.Context, addr uintptr, v any) error {
-	maps, err := maps.Read(p.PID)
+func (p *Process) Read(b []byte) (int, error) {
+	length := len(b)
+	localIov := []unix.Iovec{{Base: &b[0], Len: uint64(length)}}
+	remoteIov := []unix.RemoteIovec{{Base: uintptr(p.i), Len: int(length)}}
+	read, err := unix.ProcessVMReadv(p.PID, localIov, remoteIov, 0)
 	if err != nil {
-		return fmt.Errorf("reading maps: %w", err)
+		return 0, fmt.Errorf("reading process memory at address 0x%x: %w", p.i, err)
 	}
+	p.i += int64(read)
+	return read, nil
+}
 
-	targetMap, err := maps.Find(addr)
-	if err != nil {
-		return fmt.Errorf("finding target map: %w", err)
+func (p *Process) Seek(offset int64, whence int) (int64, error) {
+	switch whence {
+	case io.SeekStart:
+		p.i = offset
+		return p.i, nil
+	case io.SeekCurrent:
+		p.i += offset
+		return p.i, nil
+	case io.SeekEnd:
+		p.i = offset
+		return p.i, nil
+	default:
+		return 0, fmt.Errorf("unsupported seek mode")
 	}
+}
 
-	// We probably need sparsestruct to be able to hit multiple maps
-	mem := memory.NewBuffer(p.PID, targetMap.Start(), targetMap.End(), 1024*1024)
-
+// ReadStruct reads data from the process's memory at a given address into a sparsestruct.
+func (p *Process) ReadStruct(addr uintptr, v any) error {
 	size, err := sparsestruct.Size(v)
 	if err != nil {
 		return fmt.Errorf("getting size of type: %w", err)
 	}
-	b, err := mem.Next(size)
-	err = sparsestruct.Unmarshal(b, v)
+	b := make([]byte, size, size)
+	localIov := []unix.Iovec{{Base: &b[0], Len: uint64(size)}}
+	remoteIov := []unix.RemoteIovec{{Base: addr, Len: int(size)}}
+	read, err := unix.ProcessVMReadv(p.PID, localIov, remoteIov, 0)
+	if err != nil {
+		return fmt.Errorf("reading process memory at address 0x%x: %w", addr, err)
+	}
+	if read != int(size) {
+		return fmt.Errorf("read %d bytes, expected %d", read, size)
+	}
+	err = sparsestruct.Unmarshal(p, addr, v)
 	if err != nil {
 		return fmt.Errorf("unmarshalling sparse struct: %w", err)
 	}
 	return nil
+}
+
+// Read reads data from the process's memory at a given address into a something oh god
+func (p *Process) ReadUint32(addr uintptr) (uint32, error) {
+	var b [4]byte
+	localIov := []unix.Iovec{{Base: &b[0], Len: 4}}
+	remoteIov := []unix.RemoteIovec{{Base: addr, Len: 4}}
+	read, err := unix.ProcessVMReadv(p.PID, localIov, remoteIov, 0)
+	if err != nil {
+		return 0, fmt.Errorf("reading process memory at address 0x%x: %w", addr, err)
+	}
+	if read != 4 {
+		return 0, fmt.Errorf("read %d bytes, expected 4", read)
+	}
+	return binary.LittleEndian.Uint32(b[0:]), nil
+}
+
+// Read reads data from the process's memory at a given address into a something oh god
+func (p *Process) ReadUintptr(addr uintptr) (uintptr, error) {
+	var b [8]byte
+	localIov := []unix.Iovec{{Base: &b[0], Len: 8}}
+	remoteIov := []unix.RemoteIovec{{Base: addr, Len: 8}}
+	read, err := unix.ProcessVMReadv(p.PID, localIov, remoteIov, 0)
+	if err != nil {
+		return 0, fmt.Errorf("reading process memory at address 0x%x: %w", addr, err)
+	}
+	if read != 8 {
+		return 0, fmt.Errorf("read %d bytes, expected 8", read)
+	}
+	return uintptr(binary.LittleEndian.Uint64(b[0:])), nil
 }

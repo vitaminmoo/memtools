@@ -12,15 +12,17 @@ func NewBuffer(pid int, start, end uintptr, bufLen int) *Buffer {
 		bufLen = 1024 * 1024 * 1024
 	}
 	return &Buffer{
-		pid:  pid,
-		addr: start,
-		end:  end,
-		data: make([]byte, bufLen),
+		pid:   pid,
+		start: start,
+		addr:  start,
+		end:   end,
+		data:  make([]byte, bufLen),
 	}
 }
 
 type Buffer struct {
 	pid      int
+	start    uintptr
 	addr     uintptr
 	end      uintptr
 	data     []byte
@@ -32,9 +34,13 @@ type Buffer struct {
 func (b *Buffer) Reset(addr uintptr) {
 	b.addr = addr
 	// b.data = b.data[:0]
-	// b.data = make([]byte, cap(b.data))
+	//b.data = make([]byte, cap(b.data))
+	for i := range b.data {
+		b.data[i] = 0
+	}
 	b.i = 0
 	b.err = nil
+	b.syscalls = 0
 }
 
 func (b *Buffer) Next(l int) ([]byte, error) {

@@ -35,7 +35,12 @@ func (s *matchState) matches(b byte) bool {
 	return s.matchAny || s.b == b
 }
 
-func (b *Buffer) FindFirst(pattern string) (int, error) {
+func (b *Buffer) FindFirst(pattern string) (uintptr, error) {
+	b.Reset(b.start)
+	return b.Find(pattern)
+}
+
+func (b *Buffer) Find(pattern string) (uintptr, error) {
 	if len(pattern) == 0 {
 		return 0, nil
 	}
@@ -53,7 +58,7 @@ BUF:
 	for {
 		data, err := b.Next(1024 * 1024)
 		if err != nil {
-			return -1, err
+			return 0, err
 		}
 
 		// Iterate through each possible starting position in the data.
@@ -69,7 +74,7 @@ BUF:
 			}
 			// If the inner loop completed without a mismatch, we found it!
 			if foundMatch {
-				return absolutePos + i, nil
+				return uintptr(b.start + uintptr(absolutePos+i)), nil
 			}
 		}
 
