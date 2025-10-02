@@ -14,7 +14,10 @@ import (
 	"strings"
 )
 
-const tag = "offset"
+const (
+	tag     = "offset"
+	verbose = true
+)
 
 func Size(v any) (int, error) {
 	t := reflect.TypeOf(v)
@@ -31,11 +34,11 @@ func Size(v any) (int, error) {
 	var totalSize uintptr
 	for i := range t.NumField() {
 		field := t.Field(i)
-		_, fieldSize, err := parseTag(field)
+		_, offset, err := parseTag(field)
 		if err != nil {
 			return 0, fmt.Errorf("parsing tag for field %s: %w", field.Name, err)
 		}
-		end := field.Offset + fieldSize
+		end := offset + field.Type.Size()
 		totalSize = max(totalSize, end)
 	}
 	return int(totalSize), nil
@@ -79,6 +82,8 @@ func Unmarshal(r io.ReadSeeker, addr uintptr, v any) error {
 
 	t := elem.Type()
 
+	var offset uintptr
+
 	for i := range elem.NumField() {
 		field := t.Field(i)
 		fieldVal := elem.Field(i)
@@ -94,7 +99,9 @@ func Unmarshal(r io.ReadSeeker, addr uintptr, v any) error {
 		if err != nil {
 			return fmt.Errorf("parsing tags: %w", err)
 		}
-		offset := tagOffset
+		if tagOffset != 0 {
+			offset = tagOffset
+		}
 
 		switch fieldVal.Kind() {
 		case reflect.Pointer:
@@ -207,7 +214,24 @@ func Unmarshal(r io.ReadSeeker, addr uintptr, v any) error {
 			}
 			offset += uintptr(n)
 			fieldVal.SetUint(uint64(val))
-
+		case reflect.Bool:
+			var val bool
+			n, err := binary.Decode(data[offset:], byteOrder, &val)
+			if err != nil {
+				return fmt.Errorf("reading bool for field %s: %w", field.Name, err)
+			}
+			offset += uintptr(n)
+			fieldVal.SetBool(val)
+		case reflect.String:
+			var val string
+			for _, b := range data[offset:] {
+				if b == 0 {
+					break
+				}
+				val += string(b)
+			}
+			offset += uintptr(len(val))
+			fieldVal.SetString(val)
 		default:
 			return fmt.Errorf("unsupported type: %s", fieldVal.Type())
 		}
@@ -268,7 +292,9 @@ func (p *PointerGetter[T]) Address() uintptr {
 
 func (p *PointerGetter[T]) Read(r io.ReadSeeker) {
 	if p.AddressValue == 0 {
-		p.Error = fmt.Errorf("pointer address is zero")
+		if verbose {
+			p.Error = fmt.Errorf("pointer address is zero")
+		}
 		return
 	}
 	if p.Val == nil {
@@ -280,8 +306,8 @@ func (p *PointerGetter[T]) Read(r io.ReadSeeker) {
 func (p PointerGetter[T]) MarshalJSON() ([]byte, error) {
 	type Alias PointerGetter[T]
 	addrValue := fmt.Sprintf("0x%x", p.AddressValue)
-	if p.AddressValue == 0 {
-		addrValue = ""
+	if p.AddressValue == 0 || !verbose {
+		return []byte("null"), nil
 	}
 	var errStr string
 	if p.Error != nil {
@@ -322,7 +348,9 @@ func (p *StringPointer) Address() uintptr {
 
 func (p *StringPointer) Read(r io.ReadSeeker) {
 	if p.AddressValue == 0 {
-		p.Error = fmt.Errorf("pointer address is zero")
+		if verbose {
+			p.Error = fmt.Errorf("pointer address is zero")
+		}
 		return
 	}
 	if p.Val == nil {
@@ -346,7 +374,7 @@ func (p *StringPointer) Read(r io.ReadSeeker) {
 func (p StringPointer) MarshalJSON() ([]byte, error) {
 	type Alias StringPointer
 	addrValue := fmt.Sprintf("0x%x", p.AddressValue)
-	if p.AddressValue == 0 {
+	if p.AddressValue == 0 || !verbose {
 		addrValue = ""
 	}
 	var errStr string

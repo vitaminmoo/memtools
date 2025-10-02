@@ -1,6 +1,7 @@
 package sparsestruct_test
 
 import (
+	"bytes"
 	"math"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 func TestBasic(t *testing.T) {
 	t.Parallel()
 	data := []byte{0xFF, 0xFF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06}
+	r := bytes.NewReader(data)
 
 	var v struct {
 		Field0 uint8
@@ -24,7 +26,7 @@ func TestBasic(t *testing.T) {
 		Field6 uint8 `offset:"0x07"`
 	}
 
-	err := sparsestruct.Unmarshal(data, &v)
+	err := sparsestruct.Unmarshal(r, 0, &v)
 	require.NoError(t, err)
 
 	assert.Equal(t, uint8(0xFF), v.Field0)
@@ -42,6 +44,7 @@ func TestPointer(t *testing.T) {
 		0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 		0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 	}
+	r := bytes.NewReader(data)
 	type DestStruct struct {
 		Field1 uint8
 		Field2 uint8 `offset:"4"`
@@ -52,12 +55,10 @@ func TestPointer(t *testing.T) {
 
 	v := SourceStruct{}
 
-	err := sparsestruct.Unmarshal(data, &v)
+	err := sparsestruct.Unmarshal(r, 0, &v)
 	require.NoError(t, err)
 	require.NotNil(t, v.DestPointer)
 
-	err = v.DestPointer.Read(t.Context())
-	require.NoError(t, err)
 	assert.Equal(t, uintptr(0x10), v.DestPointer.Address())
 
 	require.Equal(t, uint8(0x00), v.DestPointer.Value().Field1)
@@ -386,7 +387,8 @@ func TestIntegerTypes(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
-			err := sparsestruct.Unmarshal(tc.data, tc.v)
+			r := bytes.NewReader(tc.data)
+			err := sparsestruct.Unmarshal(r, 0, tc.v)
 			require.NoError(t, err)
 			assert.Equal(t, tc.expected, tc.v)
 		})
