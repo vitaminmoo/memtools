@@ -9,7 +9,7 @@ import (
 
 func NewBuffer(pid int, start, end uintptr, bufLen int) *Buffer {
 	if bufLen <= 0 {
-		bufLen = 1024 * 1024 * 1024
+		bufLen = 1024 * 1024
 	}
 	return &Buffer{
 		pid:   pid,

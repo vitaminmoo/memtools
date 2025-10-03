@@ -75,13 +75,13 @@ func BenchmarkMemBuffer(b *testing.B) {
 
 	for _, size := range []int{1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192} {
 		b.Run(fmt.Sprintf("%dB reads small buffer", size), func(b *testing.B) {
-			do(b, pid, targetMap.Start(), targetMap.End(), 1024*1024, size)
+			do(b, pid, targetMap.Start(), targetMap.End(), 1024*512, size)
 		})
 	}
 
 	for _, size := range []int{1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192} {
 		b.Run(fmt.Sprintf("%dB reads big buffer", size), func(b *testing.B) {
-			do(b, pid, targetMap.Start(), targetMap.End(), 1024*1024*1024, size)
+			do(b, pid, targetMap.Start(), targetMap.End(), 1024*1024, size)
 		})
 	}
 }
