@@ -125,7 +125,7 @@ func (p *Process) ReadStruct(addr uintptr, v any) error {
 	if err != nil {
 		return fmt.Errorf("getting size of type: %w", err)
 	}
-	b := make([]byte, size, size)
+	b := make([]byte, size)
 	localIov := []unix.Iovec{{Base: &b[0], Len: uint64(size)}}
 	remoteIov := []unix.RemoteIovec{{Base: addr, Len: int(size)}}
 	read, err := unix.ProcessVMReadv(p.PID, localIov, remoteIov, 0)
