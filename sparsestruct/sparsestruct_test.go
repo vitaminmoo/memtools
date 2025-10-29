@@ -394,3 +394,53 @@ func TestIntegerTypes(t *testing.T) {
 		})
 	}
 }
+
+func TestArrayTypes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("uint32 array little endian", func(t *testing.T) {
+		t.Parallel()
+		data := []byte{
+			0x01, 0x00, 0x00, 0x00, // 1
+			0x02, 0x00, 0x00, 0x00, // 2
+			0x03, 0x00, 0x00, 0x00, // 3
+			0x04, 0x00, 0x00, 0x00, // 4
+			0x05, 0x00, 0x00, 0x00, // 5
+			0x06, 0x00, 0x00, 0x00, // 6
+			0x07, 0x00, 0x00, 0x00, // 7
+			0x08, 0x00, 0x00, 0x00, // 8
+		}
+		r := bytes.NewReader(data)
+
+		var v struct {
+			Vals [8]uint32 `offset:"0,le"`
+		}
+
+		err := sparsestruct.Unmarshal(r, 0, &v)
+		require.NoError(t, err)
+
+		expected := [8]uint32{1, 2, 3, 4, 5, 6, 7, 8}
+		assert.Equal(t, expected, v.Vals)
+	})
+
+	t.Run("int16 array big endian", func(t *testing.T) {
+		t.Parallel()
+		data := []byte{
+			0x00, 0x01, // 1
+			0x00, 0x02, // 2
+			0x80, 0x00, // -32768 (MinInt16)
+			0x7F, 0xFF, // 32767 (MaxInt16)
+		}
+		r := bytes.NewReader(data)
+
+		var v struct {
+			Vals [4]int16 `offset:"0,be"`
+		}
+
+		err := sparsestruct.Unmarshal(r, 0, &v)
+		require.NoError(t, err)
+
+		expected := [4]int16{1, 2, math.MinInt16, math.MaxInt16}
+		assert.Equal(t, expected, v.Vals)
+	})
+}

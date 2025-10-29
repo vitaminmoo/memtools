@@ -232,6 +232,86 @@ func Unmarshal(r io.ReadSeeker, addr uintptr, v any) error {
 			}
 			offset += uintptr(len(val))
 			fieldVal.SetString(val)
+		case reflect.Array:
+			for i := 0; i < fieldVal.Len(); i++ {
+				elem := fieldVal.Index(i)
+				switch elem.Kind() {
+				case reflect.Int8:
+					var val int8
+					n, err := binary.Decode(data[offset:], byteOrder, &val)
+					if err != nil {
+						return fmt.Errorf("reading int8 for field %s[%d]: %w", field.Name, i, err)
+					}
+					offset += uintptr(n)
+					elem.SetInt(int64(val))
+				case reflect.Int16:
+					var val int16
+					n, err := binary.Decode(data[offset:], byteOrder, &val)
+					if err != nil {
+						return fmt.Errorf("reading int16 for field %s[%d]: %w", field.Name, i, err)
+					}
+					offset += uintptr(n)
+					elem.SetInt(int64(val))
+				case reflect.Int32:
+					var val int32
+					n, err := binary.Decode(data[offset:], byteOrder, &val)
+					if err != nil {
+						return fmt.Errorf("reading int32 for field %s[%d]: %w", field.Name, i, err)
+					}
+					offset += uintptr(n)
+					elem.SetInt(int64(val))
+				case reflect.Int, reflect.Int64:
+					var val int64
+					n, err := binary.Decode(data[offset:], byteOrder, &val)
+					if err != nil {
+						return fmt.Errorf("reading int64 for field %s[%d]: %w", field.Name, i, err)
+					}
+					offset += uintptr(n)
+					elem.SetInt(val)
+				case reflect.Uint8:
+					var val uint8
+					n, err := binary.Decode(data[offset:], byteOrder, &val)
+					if err != nil {
+						return fmt.Errorf("reading uint8 for field %s[%d]: %w", field.Name, i, err)
+					}
+					offset += uintptr(n)
+					elem.SetUint(uint64(val))
+				case reflect.Uint16:
+					var val uint16
+					n, err := binary.Decode(data[offset:], byteOrder, &val)
+					if err != nil {
+						return fmt.Errorf("reading uint16 for field %s[%d]: %w", field.Name, i, err)
+					}
+					offset += uintptr(n)
+					elem.SetUint(uint64(val))
+				case reflect.Uint32:
+					var val uint32
+					n, err := binary.Decode(data[offset:], byteOrder, &val)
+					if err != nil {
+						return fmt.Errorf("reading uint32 for field %s[%d]: %w", field.Name, i, err)
+					}
+					offset += uintptr(n)
+					elem.SetUint(uint64(val))
+				case reflect.Uint, reflect.Uint64, reflect.Uintptr:
+					var val uint64
+					n, err := binary.Decode(data[offset:], byteOrder, &val)
+					if err != nil {
+						return fmt.Errorf("reading uint64 for field %s[%d]: %w", field.Name, i, err)
+					}
+					offset += uintptr(n)
+					elem.SetUint(val)
+				case reflect.Bool:
+					var val bool
+					n, err := binary.Decode(data[offset:], byteOrder, &val)
+					if err != nil {
+						return fmt.Errorf("reading bool for field %s[%d]: %w", field.Name, i, err)
+					}
+					offset += uintptr(n)
+					elem.SetBool(val)
+				default:
+					return fmt.Errorf("unsupported array element type for field %s: %s", field.Name, elem.Type())
+				}
+			}
 		default:
 			return fmt.Errorf("unsupported type: %s", fieldVal.Type())
 		}
