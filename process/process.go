@@ -50,7 +50,8 @@ func New(pid int) *Process {
 }
 
 // FromName finds a process by its binary name and returns a *Process instance.
-func FromName(name string) (*Process, error) {
+func FromName(name string) ([]*Process, error) {
+	ret := []*Process{}
 	files, err := os.ReadDir("/proc")
 	if err != nil {
 		return nil, fmt.Errorf("reading /proc: %w", err)
@@ -84,8 +85,11 @@ func FromName(name string) (*Process, error) {
 		exe := filepath.Base(strings.ReplaceAll(string(args[0]), "\\", "/"))
 
 		if exe == name {
-			return New(pid), nil
+			ret = append(ret, New(pid))
 		}
+	}
+	if len(ret) > 0 {
+		return ret, nil
 	}
 
 	return nil, fmt.Errorf("process %q not found", name)
