@@ -19,6 +19,157 @@ const (
 	verbose = true
 )
 
+// Numeric is a constraint for all numeric types that binary.Decode supports.
+type Numeric interface {
+	~int8 | ~int16 | ~int32 | ~int64 |
+		~uint8 | ~uint16 | ~uint32 | ~uint64 |
+		~bool
+}
+
+// decodeNumeric decodes a numeric value from data using the given byte order.
+// Returns the decoded value and number of bytes consumed.
+func decodeNumeric[T Numeric](data []byte, order binary.ByteOrder) (T, int, error) {
+	var val T
+	n, err := binary.Decode(data, order, &val)
+	return val, n, err
+}
+
+// decodeIntoValue decodes a numeric value and sets it into a reflect.Value.
+// Returns the number of bytes consumed.
+func decodeIntoValue(data []byte, order binary.ByteOrder, fieldVal reflect.Value) (int, error) {
+	switch fieldVal.Kind() {
+	case reflect.Int8:
+		val, n, err := decodeNumeric[int8](data, order)
+		if err != nil {
+			return 0, err
+		}
+		fieldVal.SetInt(int64(val))
+		return n, nil
+	case reflect.Int16:
+		val, n, err := decodeNumeric[int16](data, order)
+		if err != nil {
+			return 0, err
+		}
+		fieldVal.SetInt(int64(val))
+		return n, nil
+	case reflect.Int32:
+		val, n, err := decodeNumeric[int32](data, order)
+		if err != nil {
+			return 0, err
+		}
+		fieldVal.SetInt(int64(val))
+		return n, nil
+	case reflect.Int, reflect.Int64:
+		val, n, err := decodeNumeric[int64](data, order)
+		if err != nil {
+			return 0, err
+		}
+		fieldVal.SetInt(val)
+		return n, nil
+	case reflect.Uint8:
+		val, n, err := decodeNumeric[uint8](data, order)
+		if err != nil {
+			return 0, err
+		}
+		fieldVal.SetUint(uint64(val))
+		return n, nil
+	case reflect.Uint16:
+		val, n, err := decodeNumeric[uint16](data, order)
+		if err != nil {
+			return 0, err
+		}
+		fieldVal.SetUint(uint64(val))
+		return n, nil
+	case reflect.Uint32:
+		val, n, err := decodeNumeric[uint32](data, order)
+		if err != nil {
+			return 0, err
+		}
+		fieldVal.SetUint(uint64(val))
+		return n, nil
+	case reflect.Uint, reflect.Uint64, reflect.Uintptr:
+		val, n, err := decodeNumeric[uint64](data, order)
+		if err != nil {
+			return 0, err
+		}
+		fieldVal.SetUint(val)
+		return n, nil
+	case reflect.Bool:
+		val, n, err := decodeNumeric[bool](data, order)
+		if err != nil {
+			return 0, err
+		}
+		fieldVal.SetBool(val)
+		return n, nil
+	default:
+		return 0, fmt.Errorf("unsupported numeric type: %s", fieldVal.Kind())
+	}
+}
+
+// decodeString reads a null-terminated string from data with optional max length.
+// If maxLen > 0, reads at most maxLen bytes. Always stops at first null byte.
+func decodeString(data []byte, maxLen int) (string, int) {
+	limit := len(data)
+	if maxLen > 0 && maxLen < limit {
+		limit = maxLen
+	}
+
+	var result strings.Builder
+	for i := 0; i < limit; i++ {
+		if data[i] == 0 {
+			break
+		}
+		result.WriteByte(data[i])
+	}
+
+	// Return the number of bytes consumed (maxLen if specified, else string length)
+	consumed := result.Len()
+	if maxLen > 0 {
+		consumed = maxLen
+	}
+	return result.String(), consumed
+}
+
+// decodePointerField handles decoding of pointer fields (PointerGetter and StringPointer).
+// Returns the number of bytes consumed.
+func decodePointerField(data []byte, order binary.ByteOrder, fieldVal reflect.Value, field reflect.StructField, r io.ReadSeeker) (int, error) {
+	if field.Type.Elem().Kind() != reflect.Struct {
+		return 0, fmt.Errorf("unsupported pointer type for field %s: %s", field.Name, field.Type)
+	}
+
+	elemName := field.Type.Elem().Name()
+	isPointerGetter := strings.HasPrefix(elemName, "PointerGetter[")
+	isStringPointer := elemName == "StringPointer"
+
+	if !isPointerGetter && !isStringPointer {
+		return 0, fmt.Errorf("unsupported pointer type for field %s: %s", field.Name, field.Type)
+	}
+
+	// Create instance if nil
+	if fieldVal.IsNil() {
+		ptrType := reflect.TypeOf(fieldVal.Interface())
+		newPtr := reflect.New(ptrType.Elem())
+		fieldVal.Set(newPtr)
+	}
+
+	// Decode the address
+	var pAddr uint64
+	n, err := binary.Decode(data, order, &pAddr)
+	if err != nil {
+		return 0, fmt.Errorf("reading address for field %s: %w", field.Name, err)
+	}
+
+	// Set fields and call Read method
+	ptrVal := fieldVal.Elem()
+	ptrVal.FieldByName("AddressValue").SetUint(pAddr)
+	ptrVal.FieldByName("Data").Set(reflect.ValueOf(data))
+
+	method := fieldVal.MethodByName("Read")
+	method.Call([]reflect.Value{reflect.ValueOf(r)})
+
+	return n, nil
+}
+
 func Size(v any) (int, error) {
 	t := reflect.TypeOf(v)
 	if t == nil {
@@ -34,11 +185,26 @@ func Size(v any) (int, error) {
 	var totalSize uintptr
 	for i := range t.NumField() {
 		field := t.Field(i)
-		_, offset, err := parseTag(field)
+		opts, err := parseTagOptions(field)
 		if err != nil {
 			return 0, fmt.Errorf("parsing tag for field %s: %w", field.Name, err)
 		}
-		end := offset + field.Type.Size()
+
+		var fieldSize uintptr
+		switch field.Type.Kind() {
+		case reflect.String:
+			if opts.MaxLen > 0 {
+				fieldSize = uintptr(opts.MaxLen)
+			} else {
+				// For strings without maxlen, we can't determine size statically
+				// This is a limitation - caller must ensure buffer is large enough
+				fieldSize = 0
+			}
+		default:
+			fieldSize = field.Type.Size()
+		}
+
+		end := opts.Offset + fieldSize
 		totalSize = max(totalSize, end)
 	}
 	return int(totalSize), nil
@@ -93,225 +259,46 @@ func Unmarshal(r io.ReadSeeker, addr uintptr, v any) error {
 			return fmt.Errorf("non-settable field %s", field.Name)
 		}
 
-		var byteOrder binary.ByteOrder
-		var err error
-		byteOrder, tagOffset, err := parseTag(field)
+		opts, err := parseTagOptions(field)
 		if err != nil {
 			return fmt.Errorf("parsing tags: %w", err)
 		}
-		if tagOffset != 0 {
-			offset = tagOffset
+		if opts.Offset != 0 {
+			offset = opts.Offset
 		}
 
 		switch fieldVal.Kind() {
 		case reflect.Pointer:
-			if field.Type.Elem().Kind() == reflect.Struct {
-				if strings.HasPrefix(field.Type.Elem().Name(), "PointerGetter[") {
-					if fieldVal.IsNil() {
-						// Create a new PointerGetter instance.
-						ptrType := reflect.TypeOf(fieldVal.Interface())
-						newPtr := reflect.New(ptrType.Elem())
-						fieldVal.Set(newPtr)
-					}
-					pgVal := fieldVal.Elem()
-					var pAddr uint64
-					n, err := binary.Decode(data[offset:], byteOrder, &pAddr)
-					if err != nil {
-						return fmt.Errorf("reading address for field %s: %w", field.Name, err)
-					}
-					offset += uintptr(n)
-					pgVal.FieldByName("AddressValue").SetUint(pAddr)
-					pgVal.FieldByName("Data").Set(reflect.ValueOf(data))
+			n, err := decodePointerField(data[offset:], opts.ByteOrder, fieldVal, field, r)
+			if err != nil {
+				return err
+			}
+			offset += uintptr(n)
 
-					method := fieldVal.MethodByName("Read")
-					method.Call([]reflect.Value{reflect.ValueOf(r)})
-					continue
-				} else if field.Type.Elem().Name() == "StringPointer" {
-					if fieldVal.IsNil() {
-						// Create a new StringPointer instance.
-						ptrType := reflect.TypeOf(fieldVal.Interface())
-						newPtr := reflect.New(ptrType.Elem())
-						fieldVal.Set(newPtr)
-					}
-					spVal := fieldVal.Elem()
-					var pAddr uint64
-					n, err := binary.Decode(data[offset:], byteOrder, &pAddr)
-					if err != nil {
-						return fmt.Errorf("reading address for field %s: %w", field.Name, err)
-					}
-					offset += uintptr(n)
-					spVal.FieldByName("AddressValue").SetUint(pAddr)
-					spVal.FieldByName("Data").Set(reflect.ValueOf(data))
+		case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int, reflect.Int64,
+			reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint, reflect.Uint64, reflect.Uintptr,
+			reflect.Bool:
+			n, err := decodeIntoValue(data[offset:], opts.ByteOrder, fieldVal)
+			if err != nil {
+				return fmt.Errorf("reading %s for field %s: %w", fieldVal.Kind(), field.Name, err)
+			}
+			offset += uintptr(n)
 
-					method := fieldVal.MethodByName("Read")
-					method.Call([]reflect.Value{reflect.ValueOf(r)})
-					continue
-				} else {
-					return fmt.Errorf("unsupported pointer type for field %s: %s", field.Name, field.Type)
-				}
-			}
-		case reflect.Int8:
-			var val int8
-			n, err := binary.Decode(data[offset:], byteOrder, &val)
-			if err != nil {
-				return fmt.Errorf("reading int8 for field %s: %w", field.Name, err)
-			}
-			offset += uintptr(n)
-			fieldVal.SetInt(int64(val))
-		case reflect.Int16:
-			var val int16
-			n, err := binary.Decode(data[offset:], byteOrder, &val)
-			if err != nil {
-				return fmt.Errorf("reading int16 for field %s: %w", field.Name, err)
-			}
-			offset += uintptr(n)
-			fieldVal.SetInt(int64(val))
-		case reflect.Int32:
-			var val int32
-			n, err := binary.Decode(data[offset:], byteOrder, &val)
-			if err != nil {
-				return fmt.Errorf("reading int32 for field %s: %w", field.Name, err)
-			}
-			offset += uintptr(n)
-			fieldVal.SetInt(int64(val))
-		case reflect.Int, reflect.Int64:
-			var val int64
-			n, err := binary.Decode(data[offset:], byteOrder, &val)
-			if err != nil {
-				return fmt.Errorf("reading int64 for field %s: %w", field.Name, err)
-			}
-			offset += uintptr(n)
-			fieldVal.SetInt(val)
-		case reflect.Uint8:
-			var val uint8
-			n, err := binary.Decode(data[offset:], byteOrder, &val)
-			if err != nil {
-				return fmt.Errorf("reading uint8 for field %s: %w", field.Name, err)
-			}
-			offset += uintptr(n)
-			fieldVal.SetUint(uint64(val))
-		case reflect.Uint16:
-			var val uint16
-			n, err := binary.Decode(data[offset:], byteOrder, &val)
-			if err != nil {
-				return fmt.Errorf("reading uint16 for field %s: %w", field.Name, err)
-			}
-			offset += uintptr(n)
-			fieldVal.SetUint(uint64(val))
-		case reflect.Uint32:
-			var val uint32
-			n, err := binary.Decode(data[offset:], byteOrder, &val)
-			if err != nil {
-				return fmt.Errorf("reading uint32 for field %s: %w", field.Name, err)
-			}
-			offset += uintptr(n)
-			fieldVal.SetUint(uint64(val))
-		case reflect.Uint, reflect.Uint64, reflect.Uintptr:
-			var val uint64
-			n, err := binary.Decode(data[offset:], byteOrder, &val)
-			if err != nil {
-				return fmt.Errorf("reading uint64 for field %s: %w", field.Name, err)
-			}
-			offset += uintptr(n)
-			fieldVal.SetUint(uint64(val))
-		case reflect.Bool:
-			var val bool
-			n, err := binary.Decode(data[offset:], byteOrder, &val)
-			if err != nil {
-				return fmt.Errorf("reading bool for field %s: %w", field.Name, err)
-			}
-			offset += uintptr(n)
-			fieldVal.SetBool(val)
 		case reflect.String:
-			var val string
-			for _, b := range data[offset:] {
-				if b == 0 {
-					break
-				}
-				val += string(b)
-			}
-			offset += uintptr(len(val))
+			val, n := decodeString(data[offset:], opts.MaxLen)
 			fieldVal.SetString(val)
+			offset += uintptr(n)
+
 		case reflect.Array:
-			for i := 0; i < fieldVal.Len(); i++ {
-				elem := fieldVal.Index(i)
-				switch elem.Kind() {
-				case reflect.Int8:
-					var val int8
-					n, err := binary.Decode(data[offset:], byteOrder, &val)
-					if err != nil {
-						return fmt.Errorf("reading int8 for field %s[%d]: %w", field.Name, i, err)
-					}
-					offset += uintptr(n)
-					elem.SetInt(int64(val))
-				case reflect.Int16:
-					var val int16
-					n, err := binary.Decode(data[offset:], byteOrder, &val)
-					if err != nil {
-						return fmt.Errorf("reading int16 for field %s[%d]: %w", field.Name, i, err)
-					}
-					offset += uintptr(n)
-					elem.SetInt(int64(val))
-				case reflect.Int32:
-					var val int32
-					n, err := binary.Decode(data[offset:], byteOrder, &val)
-					if err != nil {
-						return fmt.Errorf("reading int32 for field %s[%d]: %w", field.Name, i, err)
-					}
-					offset += uintptr(n)
-					elem.SetInt(int64(val))
-				case reflect.Int, reflect.Int64:
-					var val int64
-					n, err := binary.Decode(data[offset:], byteOrder, &val)
-					if err != nil {
-						return fmt.Errorf("reading int64 for field %s[%d]: %w", field.Name, i, err)
-					}
-					offset += uintptr(n)
-					elem.SetInt(val)
-				case reflect.Uint8:
-					var val uint8
-					n, err := binary.Decode(data[offset:], byteOrder, &val)
-					if err != nil {
-						return fmt.Errorf("reading uint8 for field %s[%d]: %w", field.Name, i, err)
-					}
-					offset += uintptr(n)
-					elem.SetUint(uint64(val))
-				case reflect.Uint16:
-					var val uint16
-					n, err := binary.Decode(data[offset:], byteOrder, &val)
-					if err != nil {
-						return fmt.Errorf("reading uint16 for field %s[%d]: %w", field.Name, i, err)
-					}
-					offset += uintptr(n)
-					elem.SetUint(uint64(val))
-				case reflect.Uint32:
-					var val uint32
-					n, err := binary.Decode(data[offset:], byteOrder, &val)
-					if err != nil {
-						return fmt.Errorf("reading uint32 for field %s[%d]: %w", field.Name, i, err)
-					}
-					offset += uintptr(n)
-					elem.SetUint(uint64(val))
-				case reflect.Uint, reflect.Uint64, reflect.Uintptr:
-					var val uint64
-					n, err := binary.Decode(data[offset:], byteOrder, &val)
-					if err != nil {
-						return fmt.Errorf("reading uint64 for field %s[%d]: %w", field.Name, i, err)
-					}
-					offset += uintptr(n)
-					elem.SetUint(val)
-				case reflect.Bool:
-					var val bool
-					n, err := binary.Decode(data[offset:], byteOrder, &val)
-					if err != nil {
-						return fmt.Errorf("reading bool for field %s[%d]: %w", field.Name, i, err)
-					}
-					offset += uintptr(n)
-					elem.SetBool(val)
-				default:
-					return fmt.Errorf("unsupported array element type for field %s: %s", field.Name, elem.Type())
+			for j := 0; j < fieldVal.Len(); j++ {
+				elem := fieldVal.Index(j)
+				n, err := decodeIntoValue(data[offset:], opts.ByteOrder, elem)
+				if err != nil {
+					return fmt.Errorf("reading %s for field %s[%d]: %w", elem.Kind(), field.Name, j, err)
 				}
+				offset += uintptr(n)
 			}
+
 		default:
 			return fmt.Errorf("unsupported type: %s", fieldVal.Type())
 		}
@@ -320,34 +307,62 @@ func Unmarshal(r io.ReadSeeker, addr uintptr, v any) error {
 	return nil
 }
 
+// tagOptions holds parsed struct tag options.
+type tagOptions struct {
+	ByteOrder binary.ByteOrder
+	Offset    uintptr
+	MaxLen    int // For strings: maximum bytes to read (0 = unlimited)
+}
+
 func parseTag(field reflect.StructField) (binary.ByteOrder, uintptr, error) {
-	var byteOrder binary.ByteOrder = binary.NativeEndian
-	var offset uintptr
+	opts, err := parseTagOptions(field)
+	if err != nil {
+		return nil, 0, err
+	}
+	return opts.ByteOrder, opts.Offset, nil
+}
+
+func parseTagOptions(field reflect.StructField) (tagOptions, error) {
+	opts := tagOptions{
+		ByteOrder: binary.NativeEndian,
+	}
 
 	offsetTag := field.Tag.Get(tag)
-	if offsetTag != "" {
-		offsetParts := strings.Split(offsetTag, ",")
-		if len(offsetParts) < 1 {
-			return nil, 0, fmt.Errorf("invalid offset tag on field %s: %s", field.Name, offsetTag)
-		}
-		offsetStr := offsetParts[0]
-		offsetVal, err := strconv.ParseUint(offsetStr, 0, 64)
-		if err != nil {
-			return nil, 0, fmt.Errorf("invalid offset tag on field %s: %w", field.Name, err)
-		}
-		offset = uintptr(offsetVal)
-		for _, part := range offsetParts[1:] {
-			switch part {
-			case "le":
-				byteOrder = binary.LittleEndian
-			case "be":
-				byteOrder = binary.BigEndian
-			default:
-				return nil, 0, fmt.Errorf("invalid offset tag on field %s: %s", field.Name, offsetTag)
+	if offsetTag == "" {
+		return opts, nil
+	}
+
+	offsetParts := strings.Split(offsetTag, ",")
+	if len(offsetParts) < 1 {
+		return opts, fmt.Errorf("invalid offset tag on field %s: %s", field.Name, offsetTag)
+	}
+
+	offsetStr := offsetParts[0]
+	offsetVal, err := strconv.ParseUint(offsetStr, 0, 64)
+	if err != nil {
+		return opts, fmt.Errorf("invalid offset tag on field %s: %w", field.Name, err)
+	}
+	opts.Offset = uintptr(offsetVal)
+
+	for _, part := range offsetParts[1:] {
+		switch {
+		case part == "le":
+			opts.ByteOrder = binary.LittleEndian
+		case part == "be":
+			opts.ByteOrder = binary.BigEndian
+		case strings.HasPrefix(part, "maxlen:"):
+			maxLenStr := strings.TrimPrefix(part, "maxlen:")
+			maxLen, err := strconv.ParseInt(maxLenStr, 0, 64)
+			if err != nil {
+				return opts, fmt.Errorf("invalid maxlen on field %s: %w", field.Name, err)
 			}
+			opts.MaxLen = int(maxLen)
+		default:
+			return opts, fmt.Errorf("invalid offset tag on field %s: %s", field.Name, offsetTag)
 		}
 	}
-	return byteOrder, offset, nil
+
+	return opts, nil
 }
 
 type PointerGetter[T any] struct {
@@ -480,12 +495,12 @@ func HexDump(data []byte) string {
 
 	for i := 0; i < len(data); i += 16 {
 		// Write offset
-		result.WriteString(fmt.Sprintf("%08x  ", i))
+		fmt.Fprintf(&result, "%08x  ", i)
 
 		// Write hex bytes
 		for j := range 16 {
 			if i+j < len(data) {
-				result.WriteString(fmt.Sprintf("%02x ", data[i+j]))
+				fmt.Fprintf(&result, "%02x ", data[i+j])
 			} else {
 				result.WriteString("   ")
 			}

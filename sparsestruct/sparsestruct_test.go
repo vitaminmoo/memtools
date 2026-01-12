@@ -444,3 +444,93 @@ func TestArrayTypes(t *testing.T) {
 		assert.Equal(t, expected, v.Vals)
 	})
 }
+
+func TestStringTypes(t *testing.T) {
+	t.Parallel()
+
+	t.Run("inline string with maxlen", func(t *testing.T) {
+		t.Parallel()
+		// "Hello" followed by null, then garbage, then next field
+		data := []byte{
+			'H', 'e', 'l', 'l', 'o', 0x00, 'X', 'X', // 8 bytes for Name
+			0x42, 0x00, 0x00, 0x00, // Field = 0x42
+		}
+		r := bytes.NewReader(data)
+
+		var v struct {
+			Name  string `offset:"0x0,maxlen:8"`
+			Field uint32 `offset:"0x8,le"`
+		}
+
+		err := sparsestruct.Unmarshal(r, 0, &v)
+		require.NoError(t, err)
+
+		assert.Equal(t, "Hello", v.Name)
+		assert.Equal(t, uint32(0x42), v.Field)
+	})
+
+	t.Run("inline string fills maxlen", func(t *testing.T) {
+		t.Parallel()
+		// String that fills the entire maxlen (no null terminator within bounds)
+		data := []byte{
+			'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', // 8 bytes, no null
+			0x99, 0x00, 0x00, 0x00, // Field = 0x99
+		}
+		r := bytes.NewReader(data)
+
+		var v struct {
+			Name  string `offset:"0x0,maxlen:8"`
+			Field uint32 `offset:"0x8,le"`
+		}
+
+		err := sparsestruct.Unmarshal(r, 0, &v)
+		require.NoError(t, err)
+
+		assert.Equal(t, "ABCDEFGH", v.Name)
+		assert.Equal(t, uint32(0x99), v.Field)
+	})
+
+	t.Run("empty string with maxlen", func(t *testing.T) {
+		t.Parallel()
+		// Empty string (starts with null)
+		data := []byte{
+			0x00, 'X', 'X', 'X', 'X', 'X', 'X', 'X', // 8 bytes, null at start
+			0x42, 0x00, 0x00, 0x00, // Field = 0x42
+		}
+		r := bytes.NewReader(data)
+
+		var v struct {
+			Name  string `offset:"0x0,maxlen:8"`
+			Field uint32 `offset:"0x8,le"`
+		}
+
+		err := sparsestruct.Unmarshal(r, 0, &v)
+		require.NoError(t, err)
+
+		assert.Equal(t, "", v.Name)
+		assert.Equal(t, uint32(0x42), v.Field)
+	})
+
+	t.Run("multiple inline strings", func(t *testing.T) {
+		t.Parallel()
+		data := []byte{
+			'J', 'o', 'h', 'n', 0x00, 0x00, 0x00, 0x00, // FirstName (8 bytes)
+			'D', 'o', 'e', 0x00, 0x00, 0x00, 0x00, 0x00, // LastName (8 bytes)
+			0x1E, 0x00, 0x00, 0x00, // Age = 30
+		}
+		r := bytes.NewReader(data)
+
+		var v struct {
+			FirstName string `offset:"0x0,maxlen:8"`
+			LastName  string `offset:"0x8,maxlen:8"`
+			Age       uint32 `offset:"0x10,le"`
+		}
+
+		err := sparsestruct.Unmarshal(r, 0, &v)
+		require.NoError(t, err)
+
+		assert.Equal(t, "John", v.FirstName)
+		assert.Equal(t, "Doe", v.LastName)
+		assert.Equal(t, uint32(30), v.Age)
+	})
+}
