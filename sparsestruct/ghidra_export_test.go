@@ -137,3 +137,62 @@ func TestGenerateCDefinitions_Arch64(t *testing.T) {
 	// but the code should handle it by not adding negative padding
 	assert.Contains(t, output, "char * Ptr;")
 }
+
+// Package-level types for cyclic reference testing
+type testNodeA struct {
+	Value uint32
+	Child *sparsestruct.PointerGetter[testNodeB] `offset:"0x8"`
+}
+
+type testNodeB struct {
+	Value  uint32
+	Parent *sparsestruct.PointerGetter[testNodeA] `offset:"0x8"`
+}
+
+type testListNode struct {
+	Value uint64
+	Next  *sparsestruct.PointerGetter[testListNode] `offset:"0x8"`
+	Prev  *sparsestruct.PointerGetter[testListNode] `offset:"0x10"`
+}
+
+func TestGenerateCDefinitions_CyclicTypes(t *testing.T) {
+	t.Parallel()
+
+	// Test that cyclic type references work correctly
+	// A -> B -> A (cycle)
+	var buf bytes.Buffer
+	err := sparsestruct.GenerateCDefinitions(&buf, testNodeA{})
+	require.NoError(t, err)
+
+	output := buf.String()
+	t.Log(output)
+
+	// Both types should be forward-declared
+	assert.Contains(t, output, "typedef struct testNodeA testNodeA;")
+	assert.Contains(t, output, "typedef struct testNodeB testNodeB;")
+
+	// Both structs should be defined
+	assert.Contains(t, output, "struct testNodeA {")
+	assert.Contains(t, output, "struct testNodeB {")
+
+	// Pointers should reference each other
+	assert.Contains(t, output, "struct testNodeB * Child;")
+	assert.Contains(t, output, "struct testNodeA * Parent;")
+}
+
+func TestGenerateCDefinitions_SelfReferential(t *testing.T) {
+	t.Parallel()
+
+	// Test self-referential type (linked list node)
+	var buf bytes.Buffer
+	err := sparsestruct.GenerateCDefinitions(&buf, testListNode{})
+	require.NoError(t, err)
+
+	output := buf.String()
+	t.Log(output)
+
+	assert.Contains(t, output, "typedef struct testListNode testListNode;")
+	assert.Contains(t, output, "struct testListNode {")
+	assert.Contains(t, output, "struct testListNode * Next;")
+	assert.Contains(t, output, "struct testListNode * Prev;")
+}
