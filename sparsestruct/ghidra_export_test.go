@@ -196,3 +196,38 @@ func TestGenerateCDefinitions_SelfReferential(t *testing.T) {
 	assert.Contains(t, output, "struct testListNode * Next;")
 	assert.Contains(t, output, "struct testListNode * Prev;")
 }
+
+func TestGenerateCDefinitions_StringWithMaxlen(t *testing.T) {
+	t.Parallel()
+
+	type StringStruct struct {
+		Name  string `offset:"0x0,maxlen:32"`
+		Desc  string `offset:"0x20,maxlen:64"`
+		Count uint32 `offset:"0x60"`
+	}
+
+	var buf bytes.Buffer
+	err := sparsestruct.GenerateCDefinitions(&buf, StringStruct{})
+	require.NoError(t, err)
+
+	output := buf.String()
+	t.Log(output)
+
+	// String with maxlen should become char[N]
+	assert.Contains(t, output, "char Name[32];")
+	assert.Contains(t, output, "char Desc[64];")
+	assert.Contains(t, output, "uint32_t Count;")
+}
+
+func TestGenerateCDefinitions_StringWithoutMaxlen(t *testing.T) {
+	t.Parallel()
+
+	type BadStruct struct {
+		Name string `offset:"0x0"`
+	}
+
+	var buf bytes.Buffer
+	err := sparsestruct.GenerateCDefinitions(&buf, BadStruct{})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "maxlen")
+}

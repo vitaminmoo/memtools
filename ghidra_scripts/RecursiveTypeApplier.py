@@ -2,18 +2,31 @@
 # @category MemTools
 # @menupath Tools.Recursive Type Applier
 
-from ghidra.program.model.data import PointerDataType, StructureDataType, ArrayDataType
+from ghidra.program.model.data import PointerDataType, StructureDataType, ArrayDataType, TypeDef, Structure, Pointer, Array
 from ghidra.program.model.symbol import SourceType
+
+def unwrap_type(dt):
+    """Unwrap typedef/pointer/array to get the base type."""
+    while dt is not None:
+        if isinstance(dt, TypeDef):
+            dt = dt.getBaseDataType()
+        elif isinstance(dt, Pointer):
+            dt = dt.getDataType()
+        elif isinstance(dt, Array):
+            dt = dt.getDataType()
+        else:
+            break
+    return dt
 
 def get_pointer_target_type(field_dt):
     """Extract the target type from a pointer data type."""
-    if not isinstance(field_dt, PointerDataType):
+    if not isinstance(field_dt, Pointer):
         return None
     return field_dt.getDataType()
 
 def is_struct_pointer(field_dt):
     """Check if field is a pointer to a struct (not char* or void*)."""
-    if not isinstance(field_dt, PointerDataType):
+    if not isinstance(field_dt, Pointer):
         return False
     target = field_dt.getDataType()
     if target is None:
@@ -21,10 +34,9 @@ def is_struct_pointer(field_dt):
     # char* and void* should not be recursively followed
     if target.getName() in ["char", "void", "undefined"]:
         return False
-    # Unwrap arrays if needed
-    while isinstance(target, ArrayDataType):
-        target = target.getDataType()
-    return isinstance(target, StructureDataType)
+    # Unwrap to get base type (handles typedefs like "Act" -> "struct Act")
+    target = unwrap_type(target)
+    return isinstance(target, Structure)
 
 def read_pointer(address, ptr_size):
     """Read a pointer value from memory."""
@@ -60,15 +72,11 @@ def apply_type_recursive(address, data_type, visited, ptr_size, depth=0):
 
     visited.add(addr_long)
 
-    # Get the actual struct type (unwrap pointers/arrays)
-    actual_type = data_type
-    while isinstance(actual_type, PointerDataType):
-        actual_type = actual_type.getDataType()
-    while isinstance(actual_type, ArrayDataType):
-        actual_type = actual_type.getDataType()
+    # Get the actual struct type (unwrap pointers/arrays/typedefs)
+    actual_type = unwrap_type(data_type)
 
-    if not isinstance(actual_type, StructureDataType):
-        println("{}Not a struct type: {}".format("  " * depth, actual_type))
+    if not isinstance(actual_type, Structure):
+        println("{}Not a struct type: {} (unwrapped from {})".format("  " * depth, actual_type, data_type))
         return 0
 
     # Clear any existing data at this location
@@ -128,14 +136,14 @@ def main():
     data_type = data.getDataType()
     println("Data type: {}".format(data_type.getName()))
 
-    # Must be a struct
-    actual_type = data_type
-    while isinstance(actual_type, PointerDataType):
-        actual_type = actual_type.getDataType()
+    # Must be a struct (unwrap typedefs/pointers)
+    actual_type = unwrap_type(data_type)
 
-    if not isinstance(actual_type, StructureDataType):
-        popup("Current data must be a struct type, got: {}".format(data_type.getName()))
+    if not isinstance(actual_type, Structure):
+        popup("Current data must be a struct type, got: {} (base type: {})".format(data_type.getName(), type(actual_type).__name__))
         return
+
+    println("Unwrapped to struct: {}".format(actual_type.getName()))
 
     # Track visited addresses for cycle detection
     visited = set()
@@ -146,14 +154,20 @@ def main():
     count = 0
 
     # Process children of the starting struct
+    println("Examining {} fields...".format(actual_type.getNumComponents()))
     for i in range(actual_type.getNumComponents()):
         component = actual_type.getComponent(i)
         field_dt = component.getDataType()
         field_offset = component.getOffset()
         field_name = component.getFieldName()
 
+        # Debug: show what we're looking at
+        println("  Field {}: {} (type: {}, class: {})".format(
+            field_name or "unnamed", field_dt.getName(), field_dt, type(field_dt).__name__))
+
         if is_struct_pointer(field_dt):
             target_type = get_pointer_target_type(field_dt)
+            println("    -> Is struct pointer to: {}".format(target_type))
             field_addr = address.add(field_offset)
 
             try:

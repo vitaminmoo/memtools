@@ -119,7 +119,7 @@ func (c *genContext) scanDependencies(t reflect.Type) error {
 				if !ok {
 					return fmt.Errorf("PointerGetter missing Val field")
 				}
-			targetType := valField.Type.Elem()
+				targetType := valField.Type.Elem()
 				return c.collectType(targetType)
 			}
 		}
@@ -137,7 +137,7 @@ func (c *genContext) generateStruct(w io.Writer, t reflect.Type) error {
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
-		
+
 		_, tagOffset, err := parseTag(field)
 		if err != nil {
 			return err
@@ -149,7 +149,7 @@ func (c *genContext) generateStruct(w io.Writer, t reflect.Type) error {
 			currentOffset = tagOffset
 		}
 
-		cType, dims, size, err := c.mapType(field.Type)
+		cType, dims, size, err := c.mapType(field.Type, &field)
 		if err != nil {
 			return fmt.Errorf("field %s: %w", field.Name, err)
 		}
@@ -159,14 +159,14 @@ func (c *genContext) generateStruct(w io.Writer, t reflect.Type) error {
 			fmt.Fprintf(w, "[%d]", d)
 		}
 		fmt.Fprintf(w, ";\n")
-		
+
 		currentOffset += size
 	}
 	fmt.Fprintf(w, "};\n\n")
 	return nil
 }
 
-func (c *genContext) mapType(t reflect.Type) (string, []int, uintptr, error) {
+func (c *genContext) mapType(t reflect.Type, field *reflect.StructField) (string, []int, uintptr, error) {
 	switch t.Kind() {
 	case reflect.Bool:
 		return "bool", nil, 1, nil
@@ -186,9 +186,9 @@ func (c *genContext) mapType(t reflect.Type) (string, []int, uintptr, error) {
 		return "int64_t", nil, 8, nil
 	case reflect.Uint64, reflect.Uint, reflect.Uintptr:
 		return "uint64_t", nil, 8, nil
-		
+
 	case reflect.Array:
-		elemType, elemDims, elemSize, err := c.mapType(t.Elem())
+		elemType, elemDims, elemSize, err := c.mapType(t.Elem(), nil)
 		if err != nil {
 			return "", nil, 0, err
 		}
@@ -203,14 +203,14 @@ func (c *genContext) mapType(t reflect.Type) (string, []int, uintptr, error) {
 				if !ok {
 					return "", nil, 0, fmt.Errorf("PointerGetter missing Val field")
 				}
-			targetType := valField.Type.Elem()
-			
-			typeName := c.knownTypes[targetType]
-			if typeName == "" {
-				return "", nil, 0, fmt.Errorf("type %v not collected", targetType)
-			}
-			
-			return "struct " + typeName + " *", nil, uintptr(c.arch.PointerSize), nil
+				targetType := valField.Type.Elem()
+
+				typeName := c.knownTypes[targetType]
+				if typeName == "" {
+					return "", nil, 0, fmt.Errorf("type %v not collected", targetType)
+				}
+
+				return "struct " + typeName + " *", nil, uintptr(c.arch.PointerSize), nil
 			} else if elemName == "StringPointer" {
 				return "char *", nil, uintptr(c.arch.PointerSize), nil
 			}
@@ -229,7 +229,17 @@ func (c *genContext) mapType(t reflect.Type) (string, []int, uintptr, error) {
 		return typeName, nil, uintptr(size), nil
 
 	case reflect.String:
-		return "", nil, 0, fmt.Errorf("dynamic string type not supported")
+		if field == nil {
+			return "", nil, 0, fmt.Errorf("string type requires field context")
+		}
+		opts, err := parseTagOptions(*field)
+		if err != nil {
+			return "", nil, 0, err
+		}
+		if opts.MaxLen <= 0 {
+			return "", nil, 0, fmt.Errorf("string type requires maxlen tag for C export (e.g., `offset:\"0x0,maxlen:32\"`)")
+		}
+		return "char", []int{opts.MaxLen}, uintptr(opts.MaxLen), nil
 
 	default:
 		return "", nil, 0, fmt.Errorf("unsupported kind: %v", t.Kind())
@@ -252,7 +262,7 @@ func (c *genContext) calculateSize(t reflect.Type) (int, error) {
 			return 0, err
 		}
 
-		sparseSize, err := c.getSparseSize(field.Type)
+		sparseSize, err := c.getSparseSize(field.Type, &field)
 		if err != nil {
 			return 0, err
 		}
@@ -265,7 +275,7 @@ func (c *genContext) calculateSize(t reflect.Type) (int, error) {
 	return int(totalSize), nil
 }
 
-func (c *genContext) getSparseSize(t reflect.Type) (int, error) {
+func (c *genContext) getSparseSize(t reflect.Type, field *reflect.StructField) (int, error) {
 	switch t.Kind() {
 	case reflect.Bool, reflect.Int8, reflect.Uint8:
 		return 1, nil
@@ -276,7 +286,7 @@ func (c *genContext) getSparseSize(t reflect.Type) (int, error) {
 	case reflect.Int64, reflect.Uint64, reflect.Int, reflect.Uint, reflect.Uintptr:
 		return 8, nil
 	case reflect.Array:
-		elemSize, err := c.getSparseSize(t.Elem())
+		elemSize, err := c.getSparseSize(t.Elem(), nil)
 		if err != nil {
 			return 0, err
 		}
@@ -291,6 +301,18 @@ func (c *genContext) getSparseSize(t reflect.Type) (int, error) {
 		return 0, fmt.Errorf("unsupported pointer in size calc")
 	case reflect.Struct:
 		return c.calculateSize(t)
+	case reflect.String:
+		if field == nil {
+			return 0, fmt.Errorf("string type requires field context")
+		}
+		opts, err := parseTagOptions(*field)
+		if err != nil {
+			return 0, err
+		}
+		if opts.MaxLen <= 0 {
+			return 0, fmt.Errorf("string type requires maxlen tag for size calculation")
+		}
+		return opts.MaxLen, nil
 	}
 	return 0, fmt.Errorf("unknown size for %v", t)
 }
