@@ -182,9 +182,27 @@ func Size(v any) (int, error) {
 		return 0, fmt.Errorf("expected a struct or a pointer to a struct, but got %v, %T", t.Kind(), t)
 	}
 
+	return sizeOfType(t)
+}
+
+// sizeOfType calculates the sparse size of a struct type based on offset tags.
+// It handles embedded structs by recursively processing their fields.
+func sizeOfType(t reflect.Type) (int, error) {
 	var totalSize uintptr
+
 	for i := range t.NumField() {
 		field := t.Field(i)
+
+		// Handle embedded (anonymous) structs by recursing into their fields
+		if field.Anonymous && field.Type.Kind() == reflect.Struct {
+			embeddedSize, err := sizeOfType(field.Type)
+			if err != nil {
+				return 0, fmt.Errorf("embedded struct %s: %w", field.Name, err)
+			}
+			totalSize = max(totalSize, uintptr(embeddedSize))
+			continue
+		}
+
 		opts, err := parseTagOptions(field)
 		if err != nil {
 			return 0, fmt.Errorf("parsing tag for field %s: %w", field.Name, err)
@@ -218,6 +236,9 @@ func Size(v any) (int, error) {
 //
 // This offset defaults to 0 for the first field, and for any subsequent fields,
 // it defaults to the sum of the previous field's offset and its size.
+//
+// Embedded (anonymous) struct fields are supported - their fields are processed
+// using their own absolute offsets from their tags.
 func Unmarshal(r io.ReadSeeker, addr uintptr, v any) error {
 	size, err := Size(v)
 	if err != nil {
@@ -246,8 +267,12 @@ func Unmarshal(r io.ReadSeeker, addr uintptr, v any) error {
 		return fmt.Errorf("non-struct pointer %T", v)
 	}
 
-	t := elem.Type()
+	return unmarshalStructFields(data, elem, r)
+}
 
+// unmarshalStructFields processes the fields of a struct value, handling embedded structs recursively.
+func unmarshalStructFields(data []byte, elem reflect.Value, r io.ReadSeeker) error {
+	t := elem.Type()
 	var offset uintptr
 
 	for i := range elem.NumField() {
@@ -257,6 +282,14 @@ func Unmarshal(r io.ReadSeeker, addr uintptr, v any) error {
 		if !fieldVal.CanSet() {
 			fmt.Printf("%+v: %v\n", fieldVal.Type(), fieldVal.Kind())
 			return fmt.Errorf("non-settable field %s", field.Name)
+		}
+
+		// Handle embedded (anonymous) structs by recursing into their fields
+		if field.Anonymous && fieldVal.Kind() == reflect.Struct {
+			if err := unmarshalStructFields(data, fieldVal, r); err != nil {
+				return fmt.Errorf("embedded struct %s: %w", field.Name, err)
+			}
+			continue
 		}
 
 		opts, err := parseTagOptions(field)

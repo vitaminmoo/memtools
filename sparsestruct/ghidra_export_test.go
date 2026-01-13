@@ -2,6 +2,7 @@ package sparsestruct_test
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -230,4 +231,167 @@ func TestGenerateCDefinitions_StringWithoutMaxlen(t *testing.T) {
 	err := sparsestruct.GenerateCDefinitions(&buf, BadStruct{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "maxlen")
+}
+
+// Package-level types for embedded struct testing
+type embeddedBase struct {
+	A uint32 `offset:"0x00"`
+	B uint32 `offset:"0x08"`
+}
+
+type embeddedExtended struct {
+	embeddedBase
+	C uint32 `offset:"0x04"` // fills gap between A and B
+	D uint32 `offset:"0x0C"` // after B
+}
+
+func TestGenerateCDefinitions_Embedded(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	err := sparsestruct.GenerateCDefinitions(&buf, embeddedExtended{})
+	require.NoError(t, err)
+
+	output := buf.String()
+	t.Log(output)
+
+	// Should have typedef and struct definition for Extended only (Base is inlined)
+	assert.Contains(t, output, "typedef struct embeddedExtended embeddedExtended;")
+	assert.Contains(t, output, "struct embeddedExtended {")
+
+	// Should NOT have Base as a separate type since it's inlined
+	assert.NotContains(t, output, "typedef struct embeddedBase")
+
+	// Fields should be in offset order: A (0x00), C (0x04), B (0x08), D (0x0C)
+	assert.Contains(t, output, "uint32_t A;")
+	assert.Contains(t, output, "uint32_t C;")
+	assert.Contains(t, output, "uint32_t B;")
+	assert.Contains(t, output, "uint32_t D;")
+
+	// Verify the ordering by checking A comes before C in the output
+	aPos := strings.Index(output, "uint32_t A;")
+	cPos := strings.Index(output, "uint32_t C;")
+	bPos := strings.Index(output, "uint32_t B;")
+	dPos := strings.Index(output, "uint32_t D;")
+
+	assert.True(t, aPos < cPos, "A should come before C")
+	assert.True(t, cPos < bPos, "C should come before B")
+	assert.True(t, bPos < dPos, "B should come before D")
+}
+
+// Test embedded struct with pointer fields
+type embeddedWithPointerBase struct {
+	ID uint32 `offset:"0x00"`
+}
+
+type embeddedWithPointerExtended struct {
+	embeddedWithPointerBase
+	Data *sparsestruct.PointerGetter[embeddedWithPointerBase] `offset:"0x08"`
+}
+
+func TestGenerateCDefinitions_EmbeddedWithPointer(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	err := sparsestruct.GenerateCDefinitions(&buf, embeddedWithPointerExtended{})
+	require.NoError(t, err)
+
+	output := buf.String()
+	t.Log(output)
+
+	// Extended struct should have inlined Base fields plus the pointer
+	assert.Contains(t, output, "struct embeddedWithPointerExtended {")
+	assert.Contains(t, output, "uint32_t ID;")
+	assert.Contains(t, output, "struct embeddedWithPointerBase * Data;")
+
+	// Base struct should be generated separately because it's referenced by pointer
+	assert.Contains(t, output, "typedef struct embeddedWithPointerBase embeddedWithPointerBase;")
+	assert.Contains(t, output, "struct embeddedWithPointerBase {")
+}
+
+// Nested embedding test types
+type nestedLevel2 struct {
+	X uint32 `offset:"0x00"`
+}
+
+type nestedLevel1 struct {
+	nestedLevel2
+	Y uint32 `offset:"0x04"`
+}
+
+type nestedTop struct {
+	nestedLevel1
+	Z uint32 `offset:"0x08"`
+}
+
+func TestGenerateCDefinitions_NestedEmbedding(t *testing.T) {
+	t.Parallel()
+
+	var buf bytes.Buffer
+	err := sparsestruct.GenerateCDefinitions(&buf, nestedTop{})
+	require.NoError(t, err)
+
+	output := buf.String()
+	t.Log(output)
+
+	// Only nestedTop should be a typedef (Level1 and Level2 are inlined)
+	assert.Contains(t, output, "typedef struct nestedTop nestedTop;")
+	assert.NotContains(t, output, "typedef struct nestedLevel1")
+	assert.NotContains(t, output, "typedef struct nestedLevel2")
+
+	// All fields should be present in offset order
+	assert.Contains(t, output, "uint32_t X;")
+	assert.Contains(t, output, "uint32_t Y;")
+	assert.Contains(t, output, "uint32_t Z;")
+
+	xPos := strings.Index(output, "uint32_t X;")
+	yPos := strings.Index(output, "uint32_t Y;")
+	zPos := strings.Index(output, "uint32_t Z;")
+
+	assert.True(t, xPos < yPos, "X should come before Y")
+	assert.True(t, yPos < zPos, "Y should come before Z")
+}
+
+func TestGenerateCDefinitions_UintptrAsVoidPointer(t *testing.T) {
+	t.Parallel()
+
+	// uintptr should map to void* for generic/variant pointers
+	type BaseWithVariant struct {
+		Type       uint32  `offset:"0x00"`
+		DataOrName uintptr `offset:"0x08"` // generic pointer - could be different types
+		CommonPtr  uintptr `offset:"0x10"` // another generic pointer
+	}
+
+	var buf bytes.Buffer
+	err := sparsestruct.GenerateCDefinitions(&buf, BaseWithVariant{})
+	require.NoError(t, err)
+
+	output := buf.String()
+	t.Log(output)
+
+	// uintptr fields should become void*
+	assert.Contains(t, output, "void * DataOrName;")
+	assert.Contains(t, output, "void * CommonPtr;")
+}
+
+func TestGenerateCDefinitions_UintptrArch32(t *testing.T) {
+	t.Parallel()
+
+	// Test that uintptr uses correct size for 32-bit arch
+	type PtrStruct struct {
+		Ptr   uintptr `offset:"0x00"`
+		Field uint32  `offset:"0x04"` // right after 4-byte pointer on 32-bit
+	}
+
+	var buf bytes.Buffer
+	err := sparsestruct.GenerateCDefinitionsWithArch(&buf, sparsestruct.Arch32, PtrStruct{})
+	require.NoError(t, err)
+
+	output := buf.String()
+	t.Log(output)
+
+	// Should have void* followed immediately by Field (no padding)
+	assert.Contains(t, output, "void * Ptr;")
+	assert.Contains(t, output, "uint32_t Field;")
+	assert.NotContains(t, output, "undefined_0x4") // no padding needed on 32-bit
 }

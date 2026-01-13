@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+	"sort"
 	"strings"
 )
 
@@ -98,9 +99,27 @@ func (c *genContext) collectType(t reflect.Type) error {
 	c.knownTypes[t] = name
 	c.orderedTypes = append(c.orderedTypes, t)
 
-	// Scan fields for dependencies
+	// Scan fields for dependencies (including embedded struct fields)
+	if err := c.scanFieldsDependencies(t); err != nil {
+		return err
+	}
+	return nil
+}
+
+// scanFieldsDependencies recursively scans all fields including embedded structs.
+func (c *genContext) scanFieldsDependencies(t reflect.Type) error {
 	for i := 0; i < t.NumField(); i++ {
-		if err := c.scanDependencies(t.Field(i).Type); err != nil {
+		field := t.Field(i)
+
+		// For embedded structs, recurse into their fields (don't collect the embedded type itself)
+		if field.Anonymous && field.Type.Kind() == reflect.Struct {
+			if err := c.scanFieldsDependencies(field.Type); err != nil {
+				return err
+			}
+			continue
+		}
+
+		if err := c.scanDependencies(field.Type); err != nil {
 			return err
 		}
 	}
@@ -129,32 +148,115 @@ func (c *genContext) scanDependencies(t reflect.Type) error {
 	return nil
 }
 
-func (c *genContext) generateStruct(w io.Writer, t reflect.Type) error {
-	name := c.knownTypes[t]
-	fmt.Fprintf(w, "struct %s {\n", name)
+// flatField represents a field with its absolute offset for C generation.
+type flatField struct {
+	Name   string
+	Type   reflect.Type
+	Field  reflect.StructField
+	Offset uintptr
+}
 
-	var currentOffset uintptr
+// collectFlatFields gathers all fields from a struct type, flattening embedded structs.
+// Fields are returned with their absolute offsets from their tags.
+// For fields without explicit offsets, a running offset is maintained.
+// When a derived struct has a field at the same offset as an embedded struct,
+// the derived struct's field takes precedence (overrides).
+func collectFlatFields(t reflect.Type) ([]flatField, error) {
+	var fields []flatField
+	ctx := &genContext{
+		knownTypes: make(map[reflect.Type]string),
+		arch:       Arch64, // default for size calculations
+	}
+	if err := collectFlatFieldsRecursive(t, &fields, ctx); err != nil {
+		return nil, err
+	}
+
+	// Deduplicate by offset - later fields (from derived structs) override earlier ones
+	fieldsByOffset := make(map[uintptr]flatField)
+	for _, f := range fields {
+		fieldsByOffset[f.Offset] = f // later fields overwrite earlier ones
+	}
+
+	// Convert back to slice and sort by offset
+	fields = make([]flatField, 0, len(fieldsByOffset))
+	for _, f := range fieldsByOffset {
+		fields = append(fields, f)
+	}
+	sort.Slice(fields, func(i, j int) bool {
+		return fields[i].Offset < fields[j].Offset
+	})
+
+	return fields, nil
+}
+
+func collectFlatFieldsRecursive(t reflect.Type, fields *[]flatField, ctx *genContext) error {
+	var runningOffset uintptr
 
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
+
+		// For embedded (anonymous) structs, recurse into their fields
+		// Embedded structs' fields use their own absolute offsets
+		if field.Anonymous && field.Type.Kind() == reflect.Struct {
+			if err := collectFlatFieldsRecursive(field.Type, fields, ctx); err != nil {
+				return err
+			}
+			continue
+		}
 
 		_, tagOffset, err := parseTag(field)
 		if err != nil {
 			return err
 		}
 
-		if tagOffset > currentOffset {
-			padding := tagOffset - currentOffset
-			fmt.Fprintf(w, "    uint8_t undefined_0x%x[%d];\n", currentOffset, padding)
-			currentOffset = tagOffset
+		// Use explicit offset if provided, otherwise use running offset
+		offset := runningOffset
+		if tagOffset != 0 {
+			offset = tagOffset
 		}
 
-		cType, dims, size, err := c.mapType(field.Type, &field)
+		*fields = append(*fields, flatField{
+			Name:   field.Name,
+			Type:   field.Type,
+			Field:  field,
+			Offset: offset,
+		})
+
+		// Calculate field size and update running offset
+		fieldSize, err := ctx.getSparseSize(field.Type, &field)
 		if err != nil {
-			return fmt.Errorf("field %s: %w", field.Name, err)
+			return err
+		}
+		runningOffset = offset + uintptr(fieldSize)
+	}
+	return nil
+}
+
+func (c *genContext) generateStruct(w io.Writer, t reflect.Type) error {
+	name := c.knownTypes[t]
+	fmt.Fprintf(w, "struct %s {\n", name)
+
+	// Collect all fields including from embedded structs
+	fields, err := collectFlatFields(t)
+	if err != nil {
+		return err
+	}
+
+	var currentOffset uintptr
+
+	for _, ff := range fields {
+		if ff.Offset > currentOffset {
+			padding := ff.Offset - currentOffset
+			fmt.Fprintf(w, "    uint8_t undefined_0x%x[%d];\n", currentOffset, padding)
+			currentOffset = ff.Offset
 		}
 
-		fmt.Fprintf(w, "    %s %s", cType, field.Name)
+		cType, dims, size, err := c.mapType(ff.Type, &ff.Field)
+		if err != nil {
+			return fmt.Errorf("field %s: %w", ff.Name, err)
+		}
+
+		fmt.Fprintf(w, "    %s %s", cType, ff.Name)
 		for _, d := range dims {
 			fmt.Fprintf(w, "[%d]", d)
 		}
@@ -184,8 +286,11 @@ func (c *genContext) mapType(t reflect.Type, field *reflect.StructField) (string
 		return "uint32_t", nil, 4, nil
 	case reflect.Int64, reflect.Int:
 		return "int64_t", nil, 8, nil
-	case reflect.Uint64, reflect.Uint, reflect.Uintptr:
+	case reflect.Uint64, reflect.Uint:
 		return "uint64_t", nil, 8, nil
+	case reflect.Uintptr:
+		// uintptr maps to void* for generic/variant pointers
+		return "void *", nil, uintptr(c.arch.PointerSize), nil
 
 	case reflect.Array:
 		elemType, elemDims, elemSize, err := c.mapType(t.Elem(), nil)
@@ -254,20 +359,20 @@ func (c *genContext) calculateSize(t reflect.Type) (int, error) {
 		return 0, fmt.Errorf("expected struct, got %v", t.Kind())
 	}
 
+	// Use collectFlatFields to handle embedded structs
+	fields, err := collectFlatFields(t)
+	if err != nil {
+		return 0, err
+	}
+
 	var totalSize uintptr
-	for i := 0; i < t.NumField(); i++ {
-		field := t.Field(i)
-		_, offset, err := parseTag(field)
+	for _, ff := range fields {
+		sparseSize, err := c.getSparseSize(ff.Type, &ff.Field)
 		if err != nil {
 			return 0, err
 		}
 
-		sparseSize, err := c.getSparseSize(field.Type, &field)
-		if err != nil {
-			return 0, err
-		}
-
-		end := offset + uintptr(sparseSize)
+		end := ff.Offset + uintptr(sparseSize)
 		if end > totalSize {
 			totalSize = end
 		}
@@ -283,8 +388,11 @@ func (c *genContext) getSparseSize(t reflect.Type, field *reflect.StructField) (
 		return 2, nil
 	case reflect.Int32, reflect.Uint32:
 		return 4, nil
-	case reflect.Int64, reflect.Uint64, reflect.Int, reflect.Uint, reflect.Uintptr:
+	case reflect.Int64, reflect.Uint64, reflect.Int, reflect.Uint:
 		return 8, nil
+	case reflect.Uintptr:
+		// uintptr is a pointer (void*), so use arch pointer size
+		return c.arch.PointerSize, nil
 	case reflect.Array:
 		elemSize, err := c.getSparseSize(t.Elem(), nil)
 		if err != nil {

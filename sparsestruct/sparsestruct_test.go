@@ -534,3 +534,94 @@ func TestStringTypes(t *testing.T) {
 		assert.Equal(t, uint32(30), v.Age)
 	})
 }
+
+func TestEmbeddedStruct(t *testing.T) {
+	t.Parallel()
+
+	// Test basic embedding where extended struct fills gaps in base
+	t.Run("basic embedding with gap filling", func(t *testing.T) {
+		t.Parallel()
+
+		type Base struct {
+			A uint32 `offset:"0x00,le"`
+			B uint32 `offset:"0x08,le"`
+		}
+
+		type Extended struct {
+			Base
+			C uint32 `offset:"0x04,le"` // fills gap between A and B
+			D uint32 `offset:"0x0C,le"` // after B
+		}
+
+		data := []byte{
+			0x01, 0x00, 0x00, 0x00, // A at 0x00 = 1
+			0x03, 0x00, 0x00, 0x00, // C at 0x04 = 3
+			0x02, 0x00, 0x00, 0x00, // B at 0x08 = 2
+			0x04, 0x00, 0x00, 0x00, // D at 0x0C = 4
+		}
+		r := bytes.NewReader(data)
+
+		var v Extended
+		err := sparsestruct.Unmarshal(r, 0, &v)
+		require.NoError(t, err)
+
+		assert.Equal(t, uint32(1), v.A) // from Base
+		assert.Equal(t, uint32(2), v.B) // from Base
+		assert.Equal(t, uint32(3), v.C) // from Extended
+		assert.Equal(t, uint32(4), v.D) // from Extended
+	})
+
+	// Test nested embedding (A embeds B embeds C)
+	t.Run("nested embedding", func(t *testing.T) {
+		t.Parallel()
+
+		type Level2 struct {
+			X uint32 `offset:"0x00,le"`
+		}
+
+		type Level1 struct {
+			Level2
+			Y uint32 `offset:"0x04,le"`
+		}
+
+		type Top struct {
+			Level1
+			Z uint32 `offset:"0x08,le"`
+		}
+
+		data := []byte{
+			0x0A, 0x00, 0x00, 0x00, // X at 0x00 = 10
+			0x0B, 0x00, 0x00, 0x00, // Y at 0x04 = 11
+			0x0C, 0x00, 0x00, 0x00, // Z at 0x08 = 12
+		}
+		r := bytes.NewReader(data)
+
+		var v Top
+		err := sparsestruct.Unmarshal(r, 0, &v)
+		require.NoError(t, err)
+
+		assert.Equal(t, uint32(10), v.X)
+		assert.Equal(t, uint32(11), v.Y)
+		assert.Equal(t, uint32(12), v.Z)
+	})
+
+	// Test Size() with embedded struct
+	t.Run("size calculation", func(t *testing.T) {
+		t.Parallel()
+
+		type Base struct {
+			A uint32 `offset:"0x00"`
+			B uint32 `offset:"0x10"` // gap at 0x04-0x0F
+		}
+
+		type Extended struct {
+			Base
+			C uint32 `offset:"0x08"` // in the gap
+		}
+
+		// Size should be 0x10 + 4 = 0x14 = 20 (from Base.B)
+		size, err := sparsestruct.Size(Extended{})
+		require.NoError(t, err)
+		assert.Equal(t, 20, size)
+	})
+}
