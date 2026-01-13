@@ -535,6 +535,197 @@ func TestStringTypes(t *testing.T) {
 	})
 }
 
+func TestFloatTypes(t *testing.T) {
+	t.Parallel()
+
+	// IEEE 754 float32 representations (little endian)
+	// 1.0 = 0x3F800000
+	// -1.0 = 0xBF800000
+	// 3.14159 ≈ 0x40490FDB
+	// MaxFloat32 = 0x7F7FFFFF
+
+	// IEEE 754 float64 representations (little endian)
+	// 1.0 = 0x3FF0000000000000
+	// -1.0 = 0xBFF0000000000000
+	// 3.141592653589793 = 0x400921FB54442D18
+
+	testCases := []struct {
+		name     string
+		data     []byte
+		v        any
+		expected any
+	}{
+		// float32 little endian
+		{
+			name: "float32 1.0 le",
+			data: []byte{0x00, 0x00, 0x80, 0x3F},
+			v: &struct {
+				V float32 `offset:"0,le"`
+			}{},
+			expected: &struct {
+				V float32 `offset:"0,le"`
+			}{V: 1.0},
+		},
+		{
+			name: "float32 -1.0 le",
+			data: []byte{0x00, 0x00, 0x80, 0xBF},
+			v: &struct {
+				V float32 `offset:"0,le"`
+			}{},
+			expected: &struct {
+				V float32 `offset:"0,le"`
+			}{V: -1.0},
+		},
+		{
+			name: "float32 max le",
+			data: []byte{0xFF, 0xFF, 0x7F, 0x7F},
+			v: &struct {
+				V float32 `offset:"0,le"`
+			}{},
+			expected: &struct {
+				V float32 `offset:"0,le"`
+			}{V: math.MaxFloat32},
+		},
+		// float32 big endian
+		{
+			name: "float32 1.0 be",
+			data: []byte{0x3F, 0x80, 0x00, 0x00},
+			v: &struct {
+				V float32 `offset:"0,be"`
+			}{},
+			expected: &struct {
+				V float32 `offset:"0,be"`
+			}{V: 1.0},
+		},
+		{
+			name: "float32 -1.0 be",
+			data: []byte{0xBF, 0x80, 0x00, 0x00},
+			v: &struct {
+				V float32 `offset:"0,be"`
+			}{},
+			expected: &struct {
+				V float32 `offset:"0,be"`
+			}{V: -1.0},
+		},
+		// float64 little endian
+		{
+			name: "float64 1.0 le",
+			data: []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0x3F},
+			v: &struct {
+				V float64 `offset:"0,le"`
+			}{},
+			expected: &struct {
+				V float64 `offset:"0,le"`
+			}{V: 1.0},
+		},
+		{
+			name: "float64 -1.0 le",
+			data: []byte{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xF0, 0xBF},
+			v: &struct {
+				V float64 `offset:"0,le"`
+			}{},
+			expected: &struct {
+				V float64 `offset:"0,le"`
+			}{V: -1.0},
+		},
+		{
+			name: "float64 pi le",
+			data: []byte{0x18, 0x2D, 0x44, 0x54, 0xFB, 0x21, 0x09, 0x40},
+			v: &struct {
+				V float64 `offset:"0,le"`
+			}{},
+			expected: &struct {
+				V float64 `offset:"0,le"`
+			}{V: math.Pi},
+		},
+		// float64 big endian
+		{
+			name: "float64 1.0 be",
+			data: []byte{0x3F, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+			v: &struct {
+				V float64 `offset:"0,be"`
+			}{},
+			expected: &struct {
+				V float64 `offset:"0,be"`
+			}{V: 1.0},
+		},
+		{
+			name: "float64 -1.0 be",
+			data: []byte{0xBF, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
+			v: &struct {
+				V float64 `offset:"0,be"`
+			}{},
+			expected: &struct {
+				V float64 `offset:"0,be"`
+			}{V: -1.0},
+		},
+		{
+			name: "float64 pi be",
+			data: []byte{0x40, 0x09, 0x21, 0xFB, 0x54, 0x44, 0x2D, 0x18},
+			v: &struct {
+				V float64 `offset:"0,be"`
+			}{},
+			expected: &struct {
+				V float64 `offset:"0,be"`
+			}{V: math.Pi},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			r := bytes.NewReader(tc.data)
+			err := sparsestruct.Unmarshal(r, 0, tc.v)
+			require.NoError(t, err)
+			assert.Equal(t, tc.expected, tc.v)
+		})
+	}
+}
+
+func TestFloatArrays(t *testing.T) {
+	t.Parallel()
+
+	t.Run("float32 array little endian", func(t *testing.T) {
+		t.Parallel()
+		data := []byte{
+			0x00, 0x00, 0x80, 0x3F, // 1.0
+			0x00, 0x00, 0x00, 0x40, // 2.0
+			0x00, 0x00, 0x40, 0x40, // 3.0
+			0x00, 0x00, 0x80, 0x40, // 4.0
+		}
+		r := bytes.NewReader(data)
+
+		var v struct {
+			Vals [4]float32 `offset:"0,le"`
+		}
+
+		err := sparsestruct.Unmarshal(r, 0, &v)
+		require.NoError(t, err)
+
+		expected := [4]float32{1.0, 2.0, 3.0, 4.0}
+		assert.Equal(t, expected, v.Vals)
+	})
+
+	t.Run("float64 array big endian", func(t *testing.T) {
+		t.Parallel()
+		data := []byte{
+			0x3F, 0xF0, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 1.0
+			0x40, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, // 2.0
+		}
+		r := bytes.NewReader(data)
+
+		var v struct {
+			Vals [2]float64 `offset:"0,be"`
+		}
+
+		err := sparsestruct.Unmarshal(r, 0, &v)
+		require.NoError(t, err)
+
+		expected := [2]float64{1.0, 2.0}
+		assert.Equal(t, expected, v.Vals)
+	})
+}
+
 func TestEmbeddedStruct(t *testing.T) {
 	t.Parallel()
 

@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"reflect"
 	"strconv"
 	"strings"
@@ -100,6 +101,20 @@ func decodeIntoValue(data []byte, order binary.ByteOrder, fieldVal reflect.Value
 			return 0, err
 		}
 		fieldVal.SetBool(val)
+		return n, nil
+	case reflect.Float32:
+		bits, n, err := decodeNumeric[uint32](data, order)
+		if err != nil {
+			return 0, err
+		}
+		fieldVal.SetFloat(float64(math.Float32frombits(bits)))
+		return n, nil
+	case reflect.Float64:
+		bits, n, err := decodeNumeric[uint64](data, order)
+		if err != nil {
+			return 0, err
+		}
+		fieldVal.SetFloat(math.Float64frombits(bits))
 		return n, nil
 	default:
 		return 0, fmt.Errorf("unsupported numeric type: %s", fieldVal.Kind())
@@ -310,6 +325,7 @@ func unmarshalStructFields(data []byte, elem reflect.Value, r io.ReadSeeker) err
 
 		case reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int, reflect.Int64,
 			reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint, reflect.Uint64, reflect.Uintptr,
+			reflect.Float32, reflect.Float64,
 			reflect.Bool:
 			n, err := decodeIntoValue(data[offset:], opts.ByteOrder, fieldVal)
 			if err != nil {

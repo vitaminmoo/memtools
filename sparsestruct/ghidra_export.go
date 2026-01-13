@@ -288,6 +288,10 @@ func (c *genContext) mapType(t reflect.Type, field *reflect.StructField) (string
 		return "int64_t", nil, 8, nil
 	case reflect.Uint64, reflect.Uint:
 		return "uint64_t", nil, 8, nil
+	case reflect.Float32:
+		return "float", nil, 4, nil
+	case reflect.Float64:
+		return "double", nil, 8, nil
 	case reflect.Uintptr:
 		// uintptr maps to void* for generic/variant pointers
 		return "void *", nil, uintptr(c.arch.PointerSize), nil
@@ -386,9 +390,9 @@ func (c *genContext) getSparseSize(t reflect.Type, field *reflect.StructField) (
 		return 1, nil
 	case reflect.Int16, reflect.Uint16:
 		return 2, nil
-	case reflect.Int32, reflect.Uint32:
+	case reflect.Int32, reflect.Uint32, reflect.Float32:
 		return 4, nil
-	case reflect.Int64, reflect.Uint64, reflect.Int, reflect.Uint:
+	case reflect.Int64, reflect.Uint64, reflect.Int, reflect.Uint, reflect.Float64:
 		return 8, nil
 	case reflect.Uintptr:
 		// uintptr is a pointer (void*), so use arch pointer size
