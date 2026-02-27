@@ -20,6 +20,26 @@ const (
 	verbose = true
 )
 
+// readContext wraps an io.ReadSeeker with cycle detection state.
+// When unmarshaling structures with pointer fields that may form cycles,
+// this prevents infinite recursion by tracking which addresses have been visited
+// and reusing pointers to already-loaded data.
+type readContext struct {
+	io.ReadSeeker
+	visited map[uintptr]any // address -> *T (the Val pointer for that address)
+}
+
+// asReadContext returns the io.ReadSeeker as a readContext, wrapping it if necessary.
+func asReadContext(r io.ReadSeeker) *readContext {
+	if ctx, ok := r.(*readContext); ok {
+		return ctx
+	}
+	return &readContext{
+		ReadSeeker: r,
+		visited:    make(map[uintptr]any),
+	}
+}
+
 // Numeric is a constraint for all numeric types that binary.Decode supports.
 type Numeric interface {
 	~int8 | ~int16 | ~int32 | ~int64 |
@@ -441,10 +461,26 @@ func (p *PointerGetter[T]) Read(r io.ReadSeeker) {
 		}
 		return
 	}
+
+	// Check for cycles using readContext
+	ctx := asReadContext(r)
+	if existing, ok := ctx.visited[p.AddressValue]; ok {
+		// Already loaded this address - reuse the pointer if types match
+		if ptr, ok := existing.(*T); ok {
+			p.Val = ptr
+		}
+		// If types don't match, leave Val nil (shouldn't happen for well-formed data)
+		return
+	}
+
+	// Create the value and register it BEFORE unmarshaling
+	// This way, if we encounter a cycle during unmarshal, we'll find this pointer
 	if p.Val == nil {
 		p.Val = new(T)
 	}
-	p.Error = Unmarshal(r, p.Address(), p.Val)
+	ctx.visited[p.AddressValue] = p.Val
+
+	p.Error = Unmarshal(ctx, p.Address(), p.Val)
 }
 
 func (p PointerGetter[T]) MarshalJSON() ([]byte, error) {
