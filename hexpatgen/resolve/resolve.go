@@ -205,6 +205,13 @@ func inferBitfieldUnderlying(totalBits int) *PrimitiveInfo {
 
 func (r *resolver) resolveStructFields(name string, sd *hexpat.StructDef) error {
 	st := r.resolved[name]
+
+	// Guard against double resolution — this function can be called both from
+	// the main loop and lazily when another struct references this type.
+	if len(st.Members) > 0 {
+		return nil
+	}
+
 	var offset int
 
 	// Build fieldMap for expression transpilation
