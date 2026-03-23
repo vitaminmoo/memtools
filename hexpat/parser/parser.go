@@ -1,4 +1,4 @@
-package hexpat
+package parser
 
 import (
 	"strings"
@@ -560,12 +560,17 @@ func typeParser() p.Parser[TypeNode] {
 					// Try parsing a type arg — could be a type or an auto expression
 					argRes, argErr := typeParser().Run(curState)
 					if argErr.HasError() {
-						// Might be a non-type arg (number, expression) - skip for now
-						// consume until , or >
+						// Might be a non-type arg (number, string, expression) —
+						// capture the raw text as a RawTypeArg
+						rawStart := curState.Offset
 						for curState.InBounds(curState.Offset) &&
 							curState.Input[curState.Offset] != ',' &&
 							curState.Input[curState.Offset] != '>' {
 							curState.Consume(1)
+						}
+						rawText := string(curState.Input[rawStart:curState.Offset])
+						if rawText != "" {
+							typeArgs = append(typeArgs, RawTypeArg{Text: rawText})
 						}
 					} else {
 						typeArgs = append(typeArgs, argRes.Value)

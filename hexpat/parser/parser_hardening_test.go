@@ -1,4 +1,4 @@
-package hexpat
+package parser
 
 import (
 	"testing"
@@ -830,4 +830,29 @@ func TestParseBulkFile_xex(t *testing.T) {
 	input := readHexpatFile(t, "xex.hexpat")
 	_, err := Parse(input)
 	assert.NoError(t, err)
+}
+
+// =============================================================================
+// RawTypeArg preservation for non-type template arguments
+// =============================================================================
+
+func TestParseRawTypeArgPreserved(t *testing.T) {
+	input := `type::Magic<"\x7fELF"> magic;`
+	f, err := Parse(input)
+	require.NoError(t, err)
+	require.Len(t, f.Items, 1)
+
+	vd, ok := f.Items[0].(VarDecl)
+	require.True(t, ok)
+	assert.Equal(t, "magic", vd.Name)
+
+	nt, ok := vd.Type.(NamedType)
+	require.True(t, ok)
+	assert.Equal(t, []string{"type"}, nt.Namespace)
+	assert.Equal(t, "Magic", nt.Name)
+	require.Len(t, nt.TypeArgs, 1)
+
+	raw, ok := nt.TypeArgs[0].(RawTypeArg)
+	require.True(t, ok)
+	assert.Equal(t, `"\x7fELF"`, raw.Text)
 }

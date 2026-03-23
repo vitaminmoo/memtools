@@ -2,19 +2,20 @@ package resolve
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 
-	"github.com/vitaminmoo/memtools/hexpat"
+	"github.com/vitaminmoo/memtools/hexpat/parser"
 )
 
 // Resolve transforms a parsed hexpat AST into a resolved Package IR.
-func Resolve(file *hexpat.File) (*Package, error) {
+func Resolve(file *parser.File) (*Package, error) {
 	r := &resolver{
-		symbols:      make(map[string]hexpat.Item),
-		usingDefs:    make(map[string]*hexpat.UsingDef),
-		structDefs:   make(map[string]*hexpat.StructDef),
-		enumDefs:     make(map[string]*hexpat.EnumDef),
-		bitfieldDefs: make(map[string]*hexpat.BitfieldDef),
+		symbols:      make(map[string]parser.Item),
+		usingDefs:    make(map[string]*parser.UsingDef),
+		structDefs:   make(map[string]*parser.StructDef),
+		enumDefs:     make(map[string]*parser.EnumDef),
+		bitfieldDefs: make(map[string]*parser.BitfieldDef),
 		unionNames:   make(map[string]bool),
 		resolved:     make(map[string]*StructType),
 		resolvedE:    make(map[string]*EnumType),
@@ -28,7 +29,7 @@ func Resolve(file *hexpat.File) (*Package, error) {
 	// Collect phase
 	for _, item := range file.Items {
 		switch it := item.(type) {
-		case hexpat.Pragma:
+		case parser.Pragma:
 			if it.Key == "endian" {
 				switch it.Value {
 				case "big":
@@ -37,12 +38,12 @@ func Resolve(file *hexpat.File) (*Package, error) {
 					r.pkg.Endian = LittleEndian
 				}
 			}
-		case hexpat.StructDef:
+		case parser.StructDef:
 			r.symbols[it.Name] = it
 			r.structDefs[it.Name] = &it
-		case hexpat.UnionDef:
+		case parser.UnionDef:
 			// Convert union to struct-like for unified processing
-			sd := hexpat.StructDef{
+			sd := parser.StructDef{
 				Name:       it.Name,
 				TypeParams: it.TypeParams,
 				Body:       it.Body,
@@ -51,13 +52,13 @@ func Resolve(file *hexpat.File) (*Package, error) {
 			r.symbols[it.Name] = it
 			r.structDefs[it.Name] = &sd
 			r.unionNames[it.Name] = true
-		case hexpat.EnumDef:
+		case parser.EnumDef:
 			r.symbols[it.Name] = it
 			r.enumDefs[it.Name] = &it
-		case hexpat.BitfieldDef:
+		case parser.BitfieldDef:
 			r.symbols[it.Name] = it
 			r.bitfieldDefs[it.Name] = &it
-		case hexpat.UsingDef:
+		case parser.UsingDef:
 			r.symbols[it.Name] = it
 			r.usingDefs[it.Name] = &it
 		}
@@ -101,11 +102,11 @@ func Resolve(file *hexpat.File) (*Package, error) {
 }
 
 type resolver struct {
-	symbols      map[string]hexpat.Item
-	usingDefs    map[string]*hexpat.UsingDef
-	structDefs   map[string]*hexpat.StructDef
-	enumDefs     map[string]*hexpat.EnumDef
-	bitfieldDefs map[string]*hexpat.BitfieldDef
+	symbols      map[string]parser.Item
+	usingDefs    map[string]*parser.UsingDef
+	structDefs   map[string]*parser.StructDef
+	enumDefs     map[string]*parser.EnumDef
+	bitfieldDefs map[string]*parser.BitfieldDef
 	unionNames   map[string]bool
 	resolved     map[string]*StructType
 	resolvedE    map[string]*EnumType
@@ -113,7 +114,7 @@ type resolver struct {
 	pkg          *Package
 }
 
-func (r *resolver) resolveEnum(name string, ed *hexpat.EnumDef) (*EnumType, error) {
+func (r *resolver) resolveEnum(name string, ed *parser.EnumDef) (*EnumType, error) {
 	underlying := r.resolveBuiltinType(ed.UnderlyingType)
 	if underlying == nil {
 		return nil, fmt.Errorf("unknown underlying type for enum %s", name)
@@ -128,7 +129,7 @@ func (r *resolver) resolveEnum(name string, ed *hexpat.EnumDef) (*EnumType, erro
 	for _, m := range ed.Members {
 		val := nextVal
 		if m.Value != nil {
-			if nl, ok := m.Value.(hexpat.NumberLit); ok {
+			if nl, ok := m.Value.(parser.NumberLit); ok {
 				val = nl.Value
 			}
 		}
@@ -143,14 +144,14 @@ func (r *resolver) resolveEnum(name string, ed *hexpat.EnumDef) (*EnumType, erro
 	return et, nil
 }
 
-func (r *resolver) resolveBitfield(name string, bd *hexpat.BitfieldDef) (*BitfieldType, error) {
+func (r *resolver) resolveBitfield(name string, bd *parser.BitfieldDef) (*BitfieldType, error) {
 	goName := toPascalCase(name)
 	bt := &BitfieldType{Name: goName}
 
 	var bitOffset int
 	for _, entry := range bd.Body {
 		bits := 0
-		if nl, ok := entry.Bits.(hexpat.NumberLit); ok {
+		if nl, ok := entry.Bits.(parser.NumberLit); ok {
 			bits = int(nl.Value)
 		} else {
 			return nil, fmt.Errorf("bitfield %s: non-constant bit width", name)
@@ -203,7 +204,7 @@ func inferBitfieldUnderlying(totalBits int) *PrimitiveInfo {
 	return LookupBuiltin("u64")
 }
 
-func (r *resolver) resolveStructFields(name string, sd *hexpat.StructDef) error {
+func (r *resolver) resolveStructFields(name string, sd *parser.StructDef) error {
 	st := r.resolved[name]
 
 	// Guard against double resolution — this function can be called both from
@@ -233,7 +234,7 @@ func (r *resolver) resolveStructFields(name string, sd *hexpat.StructDef) error 
 			}
 			// Populate fieldMap from parent body
 			for _, stmt := range parentDef.Body {
-				if vd, ok := stmt.(hexpat.VarDecl); ok {
+				if vd, ok := stmt.(parser.VarDecl); ok {
 					fieldMap[vd.Name] = toPascalCase(vd.Name)
 				}
 			}
@@ -255,16 +256,24 @@ func (r *resolver) resolveStructFields(name string, sd *hexpat.StructDef) error 
 
 	for _, stmt := range sd.Body {
 		switch s := stmt.(type) {
-		case hexpat.VarDecl:
+		case parser.VarDecl:
 			// Handle @ offset (not for unions)
 			if !st.IsUnion && s.Offset != nil {
-				if nl, ok := s.Offset.(hexpat.NumberLit); ok {
+				if nl, ok := s.Offset.(parser.NumberLit); ok {
 					offset = int(nl.Value)
 				}
 			}
 
 			field, err := r.resolveVarDecl(s, fieldMap)
 			if err != nil {
+				// Estimate the size of the unresolvable type and add padding
+				// so subsequent field offsets remain correct.
+				if !st.IsUnion {
+					if sz := estimateTypeSize(s.Type); sz > 0 {
+						st.Members = append(st.Members, &PaddingMember{Size: sz})
+						offset += sz
+					}
+				}
 				continue // skip unresolvable types
 			}
 
@@ -282,8 +291,8 @@ func (r *resolver) resolveStructFields(name string, sd *hexpat.StructDef) error 
 
 			st.Members = append(st.Members, &FieldMember{Field: field})
 
-		case hexpat.PaddingStmt:
-			if nl, ok := s.Size.(hexpat.NumberLit); ok {
+		case parser.PaddingStmt:
+			if nl, ok := s.Size.(parser.NumberLit); ok {
 				padSize := int(nl.Value)
 				st.Members = append(st.Members, &PaddingMember{Size: padSize})
 				if !st.IsUnion {
@@ -291,7 +300,7 @@ func (r *resolver) resolveStructFields(name string, sd *hexpat.StructDef) error 
 				}
 			}
 
-		case hexpat.IfStmt:
+		case parser.IfStmt:
 			cm, err := r.resolveConditional(s, fieldMap)
 			if err != nil {
 				continue
@@ -309,14 +318,14 @@ func (r *resolver) resolveStructFields(name string, sd *hexpat.StructDef) error 
 
 // resolveVarDecl resolves a VarDecl into a Field. The Offset is set to -1
 // and must be filled in by the caller.
-func (r *resolver) resolveVarDecl(s hexpat.VarDecl, fieldMap map[string]string) (*Field, error) {
+func (r *resolver) resolveVarDecl(s parser.VarDecl, fieldMap map[string]string) (*Field, error) {
 	rt, err := r.resolveType(s.Type, s.Pointer, r.pkg.Endian)
 	if err != nil {
 		return nil, err
 	}
 
 	// Handle per-field endian override
-	if et, ok := s.Type.(hexpat.EndianType); ok {
+	if et, ok := s.Type.(parser.EndianType); ok {
 		switch et.Order {
 		case "le":
 			rt.Endian = LittleEndian
@@ -327,7 +336,7 @@ func (r *resolver) resolveVarDecl(s hexpat.VarDecl, fieldMap map[string]string) 
 
 	// Handle array
 	if s.Array != nil {
-		if nl, ok := s.Array.(hexpat.NumberLit); ok {
+		if nl, ok := s.Array.(parser.NumberLit); ok {
 			elemType := *rt
 			rt = &ResolvedType{
 				Kind: KindArray,
@@ -369,7 +378,7 @@ func (r *resolver) resolveVarDecl(s hexpat.VarDecl, fieldMap map[string]string) 
 }
 
 // resolveConditional resolves an IfStmt into a ConditionalMember.
-func (r *resolver) resolveConditional(s hexpat.IfStmt, fieldMap map[string]string) (*ConditionalMember, error) {
+func (r *resolver) resolveConditional(s parser.IfStmt, fieldMap map[string]string) (*ConditionalMember, error) {
 	condExpr, err := exprToGo(s.Cond, fieldMap)
 	if err != nil {
 		return nil, err
@@ -380,7 +389,7 @@ func (r *resolver) resolveConditional(s hexpat.IfStmt, fieldMap map[string]strin
 	// Process "then" branch
 	thenBranch := ConditionalBranch{Cond: condExpr}
 	for _, stmt := range s.Then {
-		if vd, ok := stmt.(hexpat.VarDecl); ok {
+		if vd, ok := stmt.(parser.VarDecl); ok {
 			field, err := r.resolveVarDecl(vd, fieldMap)
 			if err != nil {
 				continue
@@ -394,7 +403,7 @@ func (r *resolver) resolveConditional(s hexpat.IfStmt, fieldMap map[string]strin
 	if len(s.Else) > 0 {
 		// Check for else-if chain
 		if len(s.Else) == 1 {
-			if elseIf, ok := s.Else[0].(hexpat.IfStmt); ok {
+			if elseIf, ok := s.Else[0].(parser.IfStmt); ok {
 				innerCM, err := r.resolveConditional(elseIf, fieldMap)
 				if err != nil {
 					return nil, err
@@ -407,7 +416,7 @@ func (r *resolver) resolveConditional(s hexpat.IfStmt, fieldMap map[string]strin
 		// Plain else
 		elseBranch := ConditionalBranch{}
 		for _, stmt := range s.Else {
-			if vd, ok := stmt.(hexpat.VarDecl); ok {
+			if vd, ok := stmt.(parser.VarDecl); ok {
 				field, err := r.resolveVarDecl(vd, fieldMap)
 				if err != nil {
 					continue
@@ -422,24 +431,24 @@ func (r *resolver) resolveConditional(s hexpat.IfStmt, fieldMap map[string]strin
 }
 
 // exprToGo transpiles a hexpat expression to a Go source string.
-func exprToGo(expr hexpat.Expr, fieldMap map[string]string) (string, error) {
+func exprToGo(expr parser.Expr, fieldMap map[string]string) (string, error) {
 	switch e := expr.(type) {
-	case hexpat.NumberLit:
+	case parser.NumberLit:
 		if e.Raw != "" && (strings.HasPrefix(e.Raw, "0x") || strings.HasPrefix(e.Raw, "0X")) {
 			return e.Raw, nil
 		}
 		return fmt.Sprintf("%d", e.Value), nil
-	case hexpat.BoolLit:
+	case parser.BoolLit:
 		if e.Value {
 			return "true", nil
 		}
 		return "false", nil
-	case hexpat.Ident:
+	case parser.Ident:
 		if goName, ok := fieldMap[e.Name]; ok {
 			return "result." + goName, nil
 		}
 		return e.Name, nil
-	case hexpat.BinaryExpr:
+	case parser.BinaryExpr:
 		left, err := exprToGo(e.Left, fieldMap)
 		if err != nil {
 			return "", err
@@ -449,7 +458,7 @@ func exprToGo(expr hexpat.Expr, fieldMap map[string]string) (string, error) {
 			return "", err
 		}
 		return fmt.Sprintf("(%s %s %s)", left, e.Op, right), nil
-	case hexpat.UnaryExpr:
+	case parser.UnaryExpr:
 		operand, err := exprToGo(e.Operand, fieldMap)
 		if err != nil {
 			return "", err
@@ -462,7 +471,7 @@ func exprToGo(expr hexpat.Expr, fieldMap map[string]string) (string, error) {
 			return fmt.Sprintf("(%s%s)", op, operand), nil
 		}
 		return fmt.Sprintf("(%s%s)", operand, op), nil
-	case hexpat.MemberAccess:
+	case parser.MemberAccess:
 		obj, err := exprToGo(e.Object, fieldMap)
 		if err != nil {
 			return "", err
@@ -473,9 +482,9 @@ func exprToGo(expr hexpat.Expr, fieldMap map[string]string) (string, error) {
 	}
 }
 
-func (r *resolver) resolveType(tn hexpat.TypeNode, ptr *hexpat.PointerInfo, endian Endian) (*ResolvedType, error) {
+func (r *resolver) resolveType(tn parser.TypeNode, ptr *parser.PointerInfo, endian Endian) (*ResolvedType, error) {
 	// Unwrap EndianType
-	if et, ok := tn.(hexpat.EndianType); ok {
+	if et, ok := tn.(parser.EndianType); ok {
 		switch et.Order {
 		case "le":
 			endian = LittleEndian
@@ -508,7 +517,7 @@ func (r *resolver) resolveType(tn hexpat.TypeNode, ptr *hexpat.PointerInfo, endi
 	}
 
 	switch t := tn.(type) {
-	case hexpat.BuiltinType:
+	case parser.BuiltinType:
 		prim := LookupBuiltin(t.Name)
 		if prim == nil {
 			return nil, fmt.Errorf("unknown builtin type %s", t.Name)
@@ -521,7 +530,7 @@ func (r *resolver) resolveType(tn hexpat.TypeNode, ptr *hexpat.PointerInfo, endi
 			GoType:    prim.GoType,
 		}, nil
 
-	case hexpat.NamedType:
+	case parser.NamedType:
 		name := t.Name
 		// Skip namespaced types and template instantiations for MVP
 		if len(t.Namespace) > 0 || len(t.TypeArgs) > 0 {
@@ -577,15 +586,15 @@ func (r *resolver) resolveType(tn hexpat.TypeNode, ptr *hexpat.PointerInfo, endi
 	}
 }
 
-func (r *resolver) resolveBuiltinType(tn hexpat.TypeNode) *PrimitiveInfo {
+func (r *resolver) resolveBuiltinType(tn parser.TypeNode) *PrimitiveInfo {
 	// Unwrap EndianType
-	if et, ok := tn.(hexpat.EndianType); ok {
+	if et, ok := tn.(parser.EndianType); ok {
 		tn = et.Inner
 	}
 	switch t := tn.(type) {
-	case hexpat.BuiltinType:
+	case parser.BuiltinType:
 		return LookupBuiltin(t.Name)
-	case hexpat.NamedType:
+	case parser.NamedType:
 		// Check using aliases
 		if ud, ok := r.usingDefs[t.Name]; ok {
 			return r.resolveBuiltinType(ud.Type)
@@ -627,6 +636,44 @@ func (r *resolver) topoSort() []*StructType {
 	}
 
 	return result
+}
+
+// estimateTypeSize attempts to estimate the byte size of an unresolvable type
+// by inspecting its namespace, name, and raw template arguments.
+func estimateTypeSize(tn parser.TypeNode) int {
+	nt, ok := tn.(parser.NamedType)
+	if !ok {
+		return 0
+	}
+
+	// type::Magic<"\x7fELF"> — size is the unescaped string length
+	if len(nt.Namespace) == 1 && nt.Namespace[0] == "type" && nt.Name == "Magic" {
+		for _, arg := range nt.TypeArgs {
+			if raw, ok := arg.(parser.RawTypeArg); ok {
+				s, err := strconv.Unquote(raw.Text)
+				if err == nil {
+					return len(s)
+				}
+			}
+		}
+	}
+
+	// std::mem::Bytes<N> or mem::Bytes<N> — size is N
+	if nt.Name == "Bytes" && len(nt.Namespace) > 0 {
+		last := nt.Namespace[len(nt.Namespace)-1]
+		if last == "mem" {
+			for _, arg := range nt.TypeArgs {
+				if raw, ok := arg.(parser.RawTypeArg); ok {
+					n, err := strconv.Atoi(strings.TrimSpace(raw.Text))
+					if err == nil {
+						return n
+					}
+				}
+			}
+		}
+	}
+
+	return 0
 }
 
 // toPascalCase converts snake_case to PascalCase.

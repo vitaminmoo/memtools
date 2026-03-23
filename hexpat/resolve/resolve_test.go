@@ -5,12 +5,12 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/vitaminmoo/memtools/hexpat"
+	"github.com/vitaminmoo/memtools/hexpat/parser"
 )
 
-func mustParse(t *testing.T, src string) *hexpat.File {
+func mustParse(t *testing.T, src string) *parser.File {
 	t.Helper()
-	file, err := hexpat.Parse(src)
+	file, err := parser.Parse(src)
 	require.NoError(t, err, "parse failed")
 	return file
 }
@@ -521,6 +521,25 @@ struct Data {
 	assert.Equal(t, -1, st.Size) // dynamic
 }
 
+func TestResolveUnresolvableTypePadding(t *testing.T) {
+	file := mustParse(t, `
+struct ELFHeader {
+	type::Magic<"\x7fELF"> magic;
+	u8 ei_class;
+};
+`)
+	pkg, err := Resolve(file)
+	require.NoError(t, err)
+	require.Len(t, pkg.Structs, 1)
+
+	st := pkg.Structs[0]
+	fields := st.Fields()
+	require.Len(t, fields, 1) // only ei_class (magic is unresolvable)
+	assert.Equal(t, "EiClass", fields[0].Name)
+	assert.Equal(t, 4, fields[0].Offset) // offset 4, not 0
+	assert.Equal(t, 5, st.Size)          // 4 (padding) + 1 (u8)
+}
+
 func TestExprToGo(t *testing.T) {
 	fieldMap := map[string]string{
 		"flags": "Flags",
@@ -529,32 +548,32 @@ func TestExprToGo(t *testing.T) {
 
 	tests := []struct {
 		name string
-		expr hexpat.Expr
+		expr parser.Expr
 		want string
 	}{
-		{"number", hexpat.NumberLit{Value: 42}, "42"},
-		{"hex number", hexpat.NumberLit{Value: 255, Raw: "0xFF"}, "0xFF"},
-		{"bool true", hexpat.BoolLit{Value: true}, "true"},
-		{"bool false", hexpat.BoolLit{Value: false}, "false"},
-		{"field ref", hexpat.Ident{Name: "flags"}, "result.Flags"},
-		{"unknown ident", hexpat.Ident{Name: "MAGIC"}, "MAGIC"},
-		{"binary and", hexpat.BinaryExpr{
+		{"number", parser.NumberLit{Value: 42}, "42"},
+		{"hex number", parser.NumberLit{Value: 255, Raw: "0xFF"}, "0xFF"},
+		{"bool true", parser.BoolLit{Value: true}, "true"},
+		{"bool false", parser.BoolLit{Value: false}, "false"},
+		{"field ref", parser.Ident{Name: "flags"}, "result.Flags"},
+		{"unknown ident", parser.Ident{Name: "MAGIC"}, "MAGIC"},
+		{"binary and", parser.BinaryExpr{
 			Op:    "&",
-			Left:  hexpat.Ident{Name: "flags"},
-			Right: hexpat.NumberLit{Value: 1},
+			Left:  parser.Ident{Name: "flags"},
+			Right: parser.NumberLit{Value: 1},
 		}, "(result.Flags & 1)"},
-		{"unary not", hexpat.UnaryExpr{
+		{"unary not", parser.UnaryExpr{
 			Op:      "!",
-			Operand: hexpat.Ident{Name: "flags"},
+			Operand: parser.Ident{Name: "flags"},
 			Prefix:  true,
 		}, "(!result.Flags)"},
-		{"bitwise not", hexpat.UnaryExpr{
+		{"bitwise not", parser.UnaryExpr{
 			Op:      "~",
-			Operand: hexpat.Ident{Name: "flags"},
+			Operand: parser.Ident{Name: "flags"},
 			Prefix:  true,
 		}, "(^result.Flags)"},
-		{"member access", hexpat.MemberAccess{
-			Object: hexpat.Ident{Name: "flags"},
+		{"member access", parser.MemberAccess{
+			Object: parser.Ident{Name: "flags"},
 			Member: "field_name",
 		}, "result.Flags.FieldName"},
 	}

@@ -6,7 +6,7 @@ import (
 	"go/format"
 	"strings"
 
-	"github.com/vitaminmoo/memtools/hexpatgen/resolve"
+	"github.com/vitaminmoo/memtools/hexpat/resolve"
 )
 
 // Options configures code generation.
@@ -30,6 +30,8 @@ func Generate(pkg *resolve.Package, opts Options) ([]byte, error) {
 	needsMath := false
 	needsBinary := false
 	needsRuntime := false
+	needsJSON := len(pkg.Enums) > 0
+	needsFmt := len(pkg.Enums) > 0
 	for _, st := range pkg.Structs {
 		fields := st.Fields()
 		if len(fields) > 0 {
@@ -57,11 +59,17 @@ func Generate(pkg *resolve.Package, opts Options) ([]byte, error) {
 	if needsBinary {
 		imports = append(imports, `"encoding/binary"`)
 	}
+	if needsJSON {
+		imports = append(imports, `"encoding/json"`)
+	}
+	if needsFmt {
+		imports = append(imports, `"fmt"`)
+	}
 	if needsMath {
 		imports = append(imports, `"math"`)
 	}
 	if needsRuntime {
-		imports = append(imports, `"github.com/vitaminmoo/memtools/hexpatgen/runtime"`)
+		imports = append(imports, `"github.com/vitaminmoo/memtools/hexpat/runtime"`)
 	}
 
 	if len(imports) > 0 {
@@ -100,10 +108,16 @@ func Generate(pkg *resolve.Package, opts Options) ([]byte, error) {
 	}
 
 	// Suppress unused import warnings
-	if needsMath || needsBinary {
+	if needsMath || needsBinary || needsJSON || needsFmt {
 		fmt.Fprintf(&buf, "// Ensure imports are used.\nvar (\n")
 		if needsBinary {
 			fmt.Fprintf(&buf, "\t_ = binary.LittleEndian\n")
+		}
+		if needsJSON {
+			fmt.Fprintf(&buf, "\t_ = json.Marshal\n")
+		}
+		if needsFmt {
+			fmt.Fprintf(&buf, "\t_ = fmt.Sprintf\n")
 		}
 		if needsMath {
 			fmt.Fprintf(&buf, "\t_ = math.Float32frombits\n")

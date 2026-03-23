@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/vitaminmoo/memtools/hexpat"
-	"github.com/vitaminmoo/memtools/hexpatgen/codegen"
-	"github.com/vitaminmoo/memtools/hexpatgen/resolve"
+	"github.com/vitaminmoo/memtools/hexpat/parser"
+	"github.com/vitaminmoo/memtools/hexpat/codegen"
+	"github.com/vitaminmoo/memtools/hexpat/resolve"
 )
 
 func main() {
@@ -29,7 +29,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	file, err := hexpat.Parse(string(src))
+	file, err := parser.Parse(string(src))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "parse error: %v\n", err)
 		os.Exit(1)

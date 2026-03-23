@@ -1,6 +1,6 @@
-// Package hexpat provides a parser for the ImHex pattern language (.hexpat files).
+// Package parser provides a parser for the ImHex pattern language (.hexpat files).
 // It produces an AST that can be consumed by code generators.
-package hexpat
+package parser
 
 // File is the top-level AST node representing an entire .hexpat file.
 type File struct {
@@ -399,6 +399,14 @@ type EndianType struct {
 }
 
 func (EndianType) typeNode() {}
+
+// RawTypeArg captures a non-type template argument (string literal, number, etc.)
+// that typeParser() cannot parse as a TypeNode.
+type RawTypeArg struct {
+	Text string
+}
+
+func (RawTypeArg) typeNode() {}
 
 // --- Attributes ---
 

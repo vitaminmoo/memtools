@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"fmt"
 
-	"github.com/vitaminmoo/memtools/hexpatgen/resolve"
+	"github.com/vitaminmoo/memtools/hexpat/resolve"
 )
 
 func writeBitfieldStruct(buf *bytes.Buffer, bt *resolve.BitfieldType) {

@@ -3,21 +3,21 @@ package codegen
 import (
 	"bytes"
 	"encoding/binary"
-	"go/parser"
+	goparser "go/parser"
 	"go/token"
 	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/vitaminmoo/memtools/hexpatgen/resolve"
-	"github.com/vitaminmoo/memtools/hexpatgen/runtime"
-	"github.com/vitaminmoo/memtools/hexpat"
+	"github.com/vitaminmoo/memtools/hexpat/resolve"
+	"github.com/vitaminmoo/memtools/hexpat/runtime"
+	"github.com/vitaminmoo/memtools/hexpat/parser"
 )
 
-func mustParse(t *testing.T, src string) *hexpat.File {
+func mustParse(t *testing.T, src string) *parser.File {
 	t.Helper()
-	file, err := hexpat.Parse(src)
+	file, err := parser.Parse(src)
 	require.NoError(t, err, "parse failed")
 	return file
 }
@@ -35,7 +35,7 @@ func mustGenerate(t *testing.T, src string) string {
 func assertCompiles(t *testing.T, src string) {
 	t.Helper()
 	fset := token.NewFileSet()
-	_, err := parser.ParseFile(fset, "generated.go", src, parser.AllErrors)
+	_, err := goparser.ParseFile(fset, "generated.go", src, goparser.AllErrors)
 	assert.NoError(t, err, "generated code does not parse:\n%s", src)
 }
 
@@ -67,6 +67,8 @@ struct Header {
 	assert.Contains(t, src, "type Compression uint32")
 	assert.Contains(t, src, "CompressionNone")
 	assert.Contains(t, src, "CompressionRLE8")
+	assert.Contains(t, src, "func (e Compression) String() string")
+	assert.Contains(t, src, "func (e Compression) MarshalJSON() ([]byte, error)")
 }
 
 func TestGenerateWithPointer(t *testing.T) {
@@ -327,6 +329,24 @@ struct Data {
 	assert.Contains(t, src, "Items []uint8")
 	assert.Contains(t, src, "make([]uint8")
 	assert.Contains(t, src, "result.Count")
+}
+
+func TestEnumMarshalJSON(t *testing.T) {
+	src := mustGenerate(t, `
+enum Status : u8 {
+	OK = 0,
+	Error = 1
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "func (e Status) String() string")
+	assert.Contains(t, src, `"OK (%d)"`)
+	assert.Contains(t, src, `"Error (%d)"`)
+	assert.Contains(t, src, `"unknown (%d)"`)
+	assert.Contains(t, src, "func (e Status) MarshalJSON() ([]byte, error)")
+	assert.Contains(t, src, "json.Marshal(e.String())")
+	assert.Contains(t, src, `"encoding/json"`)
+	assert.Contains(t, src, `"fmt"`)
 }
 
 func TestGenerateExprArrayMultiByte(t *testing.T) {

@@ -1,4 +1,4 @@
-package hexpat
+package parser
 
 import (
 	"strconv"

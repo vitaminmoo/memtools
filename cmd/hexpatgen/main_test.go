@@ -1,15 +1,15 @@
 package main
 
 import (
-	"go/parser"
+	goparser "go/parser"
 	"go/token"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/vitaminmoo/memtools/hexpat"
-	"github.com/vitaminmoo/memtools/hexpatgen/codegen"
-	"github.com/vitaminmoo/memtools/hexpatgen/resolve"
+	"github.com/vitaminmoo/memtools/hexpat/parser"
+	"github.com/vitaminmoo/memtools/hexpat/codegen"
+	"github.com/vitaminmoo/memtools/hexpat/resolve"
 )
 
 func TestPipeline(t *testing.T) {
@@ -19,7 +19,7 @@ struct Header {
 	u16 version;
 };
 `
-	file, err := hexpat.Parse(src)
+	file, err := parser.Parse(src)
 	require.NoError(t, err)
 
 	pkg, err := resolve.Resolve(file)
@@ -29,7 +29,7 @@ struct Header {
 	require.NoError(t, err)
 
 	fset := token.NewFileSet()
-	_, err = parser.ParseFile(fset, "test.go", out, parser.AllErrors)
+	_, err = goparser.ParseFile(fset, "test.go", out, goparser.AllErrors)
 	assert.NoError(t, err, "generated code does not parse:\n%s", string(out))
 }
 
