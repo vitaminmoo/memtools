@@ -149,10 +149,9 @@ func writeReadFunc(buf *bytes.Buffer, st *resolve.StructType, defaultEndian reso
 			maxSize = s
 		}
 	}
-	if maxSize < 1 {
-		maxSize = 8
+	if maxSize > 0 {
+		fmt.Fprintf(buf, "\tvar buf [%d]byte\n", maxSize)
 	}
-	fmt.Fprintf(buf, "\tvar buf [%d]byte\n", maxSize)
 
 	dynamic := st.HasDynamicFields()
 	if dynamic {
