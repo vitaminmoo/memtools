@@ -258,9 +258,16 @@ func (r *resolver) resolveStructFields(name string, sd *parser.StructDef) error 
 		switch s := stmt.(type) {
 		case parser.VarDecl:
 			// Handle @ offset (not for unions)
+			var dynamicOffset string
 			if !st.IsUnion && s.Offset != nil {
 				if nl, ok := s.Offset.(parser.NumberLit); ok {
 					offset = int(nl.Value)
+				} else {
+					// Dynamic offset expression (e.g. @ begin_ptr)
+					expr, exprErr := exprToGo(s.Offset, fieldMap)
+					if exprErr == nil {
+						dynamicOffset = expr
+					}
 				}
 			}
 
@@ -277,7 +284,12 @@ func (r *resolver) resolveStructFields(name string, sd *parser.StructDef) error 
 				continue // skip unresolvable types
 			}
 
-			if st.IsUnion {
+			if dynamicOffset != "" {
+				// Field placed at a remote absolute address — doesn't consume
+				// space in the sequential layout.
+				field.OffsetExpr = dynamicOffset
+				field.Offset = -1
+			} else if st.IsUnion {
 				field.Offset = 0
 				if field.Type.Size > 0 && field.Type.Size > offset {
 					offset = field.Type.Size

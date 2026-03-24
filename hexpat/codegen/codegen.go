@@ -180,13 +180,18 @@ func writeReadFunc(buf *bytes.Buffer, st *resolve.StructType, defaultEndian reso
 			if endian != resolve.BigEndian && endian != resolve.LittleEndian {
 				endian = defaultEndian
 			}
-			if dynamic {
-				offsetExpr := "offset"
-				writeFieldRead(buf, v.Field, st.Name, endian, offsetExpr)
+			if v.OffsetExpr != "" {
+				// Field placed at a remote absolute address (e.g. @ begin_ptr)
+				addrExpr := fmt.Sprintf("int64(%s)", v.OffsetExpr)
+				writeFieldRead(buf, v.Field, st.Name, endian, addrExpr)
+				// No offset advance — remote fields don't consume inline space
+			} else if dynamic {
+				addrExpr := "int64(addr)+offset"
+				writeFieldRead(buf, v.Field, st.Name, endian, addrExpr)
 				writeOffsetAdvance(buf, v.Field)
 			} else {
-				offsetExpr := fmt.Sprintf("%d", v.Offset)
-				writeFieldRead(buf, v.Field, st.Name, endian, offsetExpr)
+				addrExpr := fmt.Sprintf("int64(addr)+%d", v.Offset)
+				writeFieldRead(buf, v.Field, st.Name, endian, addrExpr)
 			}
 		case *resolve.PaddingMember:
 			if dynamic {
@@ -226,7 +231,7 @@ func writeConditionalRead(buf *bytes.Buffer, cm *resolve.ConditionalMember, stru
 			if endian != resolve.BigEndian && endian != resolve.LittleEndian {
 				endian = defaultEndian
 			}
-			writeFieldRead(buf, f, structName, endian, "offset")
+			writeFieldRead(buf, f, structName, endian, "int64(addr)+offset")
 			writeOffsetAdvance(buf, f)
 		}
 	}
@@ -262,38 +267,38 @@ func endianVar(e resolve.Endian) string {
 	return "binary.LittleEndian"
 }
 
-func writeFieldRead(buf *bytes.Buffer, f *resolve.Field, structName string, endian resolve.Endian, offsetExpr string) {
+func writeFieldRead(buf *bytes.Buffer, f *resolve.Field, structName string, endian resolve.Endian, addrExpr string) {
 	path := fmt.Sprintf("%s.%s", structName, f.Name)
 
 	switch f.Type.Kind {
 	case resolve.KindPrimitive:
-		writePrimitiveRead(buf, f, path, offsetExpr, endian)
+		writePrimitiveRead(buf, f, path, addrExpr, endian)
 
 	case resolve.KindEnum:
-		writeEnumRead(buf, f, path, offsetExpr, endian)
+		writeEnumRead(buf, f, path, addrExpr, endian)
 
 	case resolve.KindArray:
-		writeArrayRead(buf, f, path, offsetExpr, endian)
+		writeArrayRead(buf, f, path, addrExpr, endian)
 
 	case resolve.KindStruct:
-		writeCompositeFieldRead(buf, f, path, offsetExpr, f.Type.StructRef.Name)
+		writeCompositeFieldRead(buf, f, path, addrExpr, f.Type.StructRef.Name)
 
 	case resolve.KindBitfield:
-		writeCompositeFieldRead(buf, f, path, offsetExpr, f.Type.BitfieldRef.Name)
+		writeCompositeFieldRead(buf, f, path, addrExpr, f.Type.BitfieldRef.Name)
 
 	case resolve.KindPointer:
-		writePointerRead(buf, f, path, offsetExpr, endian)
+		writePointerRead(buf, f, path, addrExpr, endian)
 	}
 }
 
-func writePrimitiveRead(buf *bytes.Buffer, f *resolve.Field, path string, offsetExpr string, endian resolve.Endian) {
+func writePrimitiveRead(buf *bytes.Buffer, f *resolve.Field, path string, addrExpr string, endian resolve.Endian) {
 	prim := f.Type.Primitive
 	size := prim.Size
 	ev := endianVar(endian)
 
-	fmt.Fprintf(buf, "\t// Field: %s at offset %s\n", f.Name, offsetExpr)
-	fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(buf[:%d], int64(addr)+%s); err != nil {\n", size, offsetExpr)
-	fmt.Fprintf(buf, "\t\terrs.Add(%q, uintptr(int64(addr)+%s), err)\n", path, offsetExpr)
+	fmt.Fprintf(buf, "\t// Field: %s at %s\n", f.Name, addrExpr)
+	fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(buf[:%d], %s); err != nil {\n", size, addrExpr)
+	fmt.Fprintf(buf, "\t\terrs.Add(%q, uintptr(%s), err)\n", path, addrExpr)
 	fmt.Fprintf(buf, "\t} else {\n")
 
 	switch prim.GoType {
@@ -329,14 +334,14 @@ func writePrimitiveRead(buf *bytes.Buffer, f *resolve.Field, path string, offset
 	fmt.Fprintf(buf, "\t}\n\n")
 }
 
-func writeEnumRead(buf *bytes.Buffer, f *resolve.Field, path string, offsetExpr string, endian resolve.Endian) {
+func writeEnumRead(buf *bytes.Buffer, f *resolve.Field, path string, addrExpr string, endian resolve.Endian) {
 	et := f.Type.EnumRef
 	size := et.UnderlyingType.Size
 	ev := endianVar(endian)
 
-	fmt.Fprintf(buf, "\t// Field: %s (enum) at offset %s\n", f.Name, offsetExpr)
-	fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(buf[:%d], int64(addr)+%s); err != nil {\n", size, offsetExpr)
-	fmt.Fprintf(buf, "\t\terrs.Add(%q, uintptr(int64(addr)+%s), err)\n", path, offsetExpr)
+	fmt.Fprintf(buf, "\t// Field: %s (enum) at %s\n", f.Name, addrExpr)
+	fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(buf[:%d], %s); err != nil {\n", size, addrExpr)
+	fmt.Fprintf(buf, "\t\terrs.Add(%q, uintptr(%s), err)\n", path, addrExpr)
 	fmt.Fprintf(buf, "\t} else {\n")
 
 	goType := et.UnderlyingType.GoType
@@ -362,38 +367,38 @@ func writeEnumRead(buf *bytes.Buffer, f *resolve.Field, path string, offsetExpr 
 	fmt.Fprintf(buf, "\t}\n\n")
 }
 
-func writeArrayRead(buf *bytes.Buffer, f *resolve.Field, path string, offsetExpr string, endian resolve.Endian) {
+func writeArrayRead(buf *bytes.Buffer, f *resolve.Field, path string, addrExpr string, endian resolve.Endian) {
 	arr := f.Type.Array
 	elem := arr.Element
 
 	isDynamic := arr.LengthExpr != ""
 
 	if isDynamic {
-		fmt.Fprintf(buf, "\t// Field: %s (dynamic array) at offset %s\n", f.Name, offsetExpr)
+		fmt.Fprintf(buf, "\t// Field: %s (dynamic array) at %s\n", f.Name, addrExpr)
 		fmt.Fprintf(buf, "\tresult.%s = make(%s, int(%s))\n", f.Name, f.Type.GoType, arr.LengthExpr)
 	} else {
-		fmt.Fprintf(buf, "\t// Field: %s (array[%d]) at offset %s\n", f.Name, arr.Length, offsetExpr)
+		fmt.Fprintf(buf, "\t// Field: %s (array[%d]) at %s\n", f.Name, arr.Length, addrExpr)
 	}
 
 	switch elem.Kind {
 	case resolve.KindPrimitive:
 		if elem.Size == 1 && !isDynamic {
 			// Byte arrays: read all at once (fixed size only)
-			fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(result.%s[:], int64(addr)+%s); err != nil {\n", f.Name, offsetExpr)
-			fmt.Fprintf(buf, "\t\terrs.Add(%q, uintptr(int64(addr)+%s), err)\n", path, offsetExpr)
+			fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(result.%s[:], %s); err != nil {\n", f.Name, addrExpr)
+			fmt.Fprintf(buf, "\t\terrs.Add(%q, uintptr(%s), err)\n", path, addrExpr)
 			fmt.Fprintf(buf, "\t}\n\n")
 		} else if elem.Size == 1 && isDynamic {
 			// Dynamic byte slice: read all at once
 			fmt.Fprintf(buf, "\tif len(result.%s) > 0 {\n", f.Name)
-			fmt.Fprintf(buf, "\t\tif _, err := ctx.ReadAt(result.%s, int64(addr)+%s); err != nil {\n", f.Name, offsetExpr)
-			fmt.Fprintf(buf, "\t\t\terrs.Add(%q, uintptr(int64(addr)+%s), err)\n", path, offsetExpr)
+			fmt.Fprintf(buf, "\t\tif _, err := ctx.ReadAt(result.%s, %s); err != nil {\n", f.Name, addrExpr)
+			fmt.Fprintf(buf, "\t\t\terrs.Add(%q, uintptr(%s), err)\n", path, addrExpr)
 			fmt.Fprintf(buf, "\t\t}\n")
 			fmt.Fprintf(buf, "\t}\n\n")
 		} else {
 			// Multi-byte element arrays
 			ev := endianVar(endian)
 			fmt.Fprintf(buf, "\tfor i := range result.%s {\n", f.Name)
-			elemOffset := fmt.Sprintf("int64(addr)+%s+int64(i)*%d", offsetExpr, elem.Size)
+			elemOffset := fmt.Sprintf("%s+int64(i)*%d", addrExpr, elem.Size)
 			fmt.Fprintf(buf, "\t\tif _, err := ctx.ReadAt(buf[:%d], %s); err != nil {\n", elem.Size, elemOffset)
 			fmt.Fprintf(buf, "\t\t\terrs.Add(%q, uintptr(%s), err)\n", path, elemOffset)
 			fmt.Fprintf(buf, "\t\t} else {\n")
@@ -404,7 +409,7 @@ func writeArrayRead(buf *bytes.Buffer, f *resolve.Field, path string, offsetExpr
 
 	case resolve.KindStruct:
 		fmt.Fprintf(buf, "\tfor i := range result.%s {\n", f.Name)
-		elemOffset := fmt.Sprintf("int64(addr)+%s+int64(i)*%d", offsetExpr, elem.Size)
+		elemOffset := fmt.Sprintf("%s+int64(i)*%d", addrExpr, elem.Size)
 		fmt.Fprintf(buf, "\t\telem, elemErrs := Read%s(ctx, uintptr(%s))\n", elem.StructRef.Name, elemOffset)
 		fmt.Fprintf(buf, "\t\tif elem != nil {\n")
 		fmt.Fprintf(buf, "\t\t\tresult.%s[i] = *elem\n", f.Name)
@@ -418,8 +423,8 @@ func writeArrayRead(buf *bytes.Buffer, f *resolve.Field, path string, offsetExpr
 			totalSize := arr.Length * elem.Size
 			fmt.Fprintf(buf, "\t{\n")
 			fmt.Fprintf(buf, "\t\tvar tmp [%d]byte\n", totalSize)
-			fmt.Fprintf(buf, "\t\tif _, err := ctx.ReadAt(tmp[:], int64(addr)+%s); err != nil {\n", offsetExpr)
-			fmt.Fprintf(buf, "\t\t\terrs.Add(%q, uintptr(int64(addr)+%s), err)\n", path, offsetExpr)
+			fmt.Fprintf(buf, "\t\tif _, err := ctx.ReadAt(tmp[:], %s); err != nil {\n", addrExpr)
+			fmt.Fprintf(buf, "\t\t\terrs.Add(%q, uintptr(%s), err)\n", path, addrExpr)
 			fmt.Fprintf(buf, "\t\t}\n")
 			fmt.Fprintf(buf, "\t}\n\n")
 		}
@@ -452,10 +457,10 @@ func writeArrayElemDecode(buf *bytes.Buffer, fieldName string, elem *resolve.Res
 	}
 }
 
-func writeCompositeFieldRead(buf *bytes.Buffer, f *resolve.Field, path string, offsetExpr string, readName string) {
-	fmt.Fprintf(buf, "\t// Field: %s at offset %s\n", f.Name, offsetExpr)
+func writeCompositeFieldRead(buf *bytes.Buffer, f *resolve.Field, path string, addrExpr string, readName string) {
+	fmt.Fprintf(buf, "\t// Field: %s at %s\n", f.Name, addrExpr)
 	fmt.Fprintf(buf, "\t{\n")
-	fmt.Fprintf(buf, "\t\tchild, childErrs := Read%s(ctx, uintptr(int64(addr)+%s))\n", readName, offsetExpr)
+	fmt.Fprintf(buf, "\t\tchild, childErrs := Read%s(ctx, uintptr(%s))\n", readName, addrExpr)
 	fmt.Fprintf(buf, "\t\tif child != nil {\n")
 	fmt.Fprintf(buf, "\t\t\tresult.%s = *child\n", f.Name)
 	fmt.Fprintf(buf, "\t\t}\n")
@@ -463,14 +468,14 @@ func writeCompositeFieldRead(buf *bytes.Buffer, f *resolve.Field, path string, o
 	fmt.Fprintf(buf, "\t}\n\n")
 }
 
-func writePointerRead(buf *bytes.Buffer, f *resolve.Field, path string, offsetExpr string, endian resolve.Endian) {
+func writePointerRead(buf *bytes.Buffer, f *resolve.Field, path string, addrExpr string, endian resolve.Endian) {
 	ptr := f.Type.Pointer
 	ptrSize := ptr.SizeType.Size
 	ev := endianVar(endian)
 
-	fmt.Fprintf(buf, "\t// Field: %s (pointer) at offset %s\n", f.Name, offsetExpr)
-	fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(buf[:%d], int64(addr)+%s); err != nil {\n", ptrSize, offsetExpr)
-	fmt.Fprintf(buf, "\t\terrs.Add(%q, uintptr(int64(addr)+%s), err)\n", path, offsetExpr)
+	fmt.Fprintf(buf, "\t// Field: %s (pointer) at %s\n", f.Name, addrExpr)
+	fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(buf[:%d], %s); err != nil {\n", ptrSize, addrExpr)
+	fmt.Fprintf(buf, "\t\terrs.Add(%q, uintptr(%s), err)\n", path, addrExpr)
 	fmt.Fprintf(buf, "\t} else {\n")
 
 	// Read pointer address

@@ -586,3 +586,37 @@ func TestExprToGo(t *testing.T) {
 		})
 	}
 }
+
+func TestResolveDynamicAtOffset(t *testing.T) {
+	file := mustParse(t, `
+struct StdVector {
+	u32 begin_ptr;
+	u32 end_ptr;
+	u32 capacity_ptr;
+	u32 elements[(end_ptr - begin_ptr) / 4] @ begin_ptr;
+};
+`)
+	pkg, err := Resolve(file)
+	require.NoError(t, err)
+	require.Len(t, pkg.Structs, 1)
+
+	st := pkg.Structs[0]
+	fields := st.Fields()
+	require.Len(t, fields, 4)
+
+	// Inline fields have normal offsets
+	assert.Equal(t, 0, fields[0].Offset)
+	assert.Equal(t, 4, fields[1].Offset)
+	assert.Equal(t, 8, fields[2].Offset)
+
+	// Remote field has OffsetExpr and Offset -1
+	assert.Equal(t, -1, fields[3].Offset)
+	assert.Equal(t, "result.BeginPtr", fields[3].OffsetExpr)
+	assert.Equal(t, KindArray, fields[3].Type.Kind)
+	assert.Equal(t, -1, fields[3].Type.Array.Length)
+	assert.Equal(t, "((result.EndPtr - result.BeginPtr) / 4)", fields[3].Type.Array.LengthExpr)
+
+	// Struct is dynamic due to remote field
+	assert.True(t, st.HasDynamicFields())
+	assert.Equal(t, -1, st.Size)
+}

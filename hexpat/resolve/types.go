@@ -60,6 +60,9 @@ func (st *StructType) HasDynamicFields() bool {
 		if f.Type.Kind == KindArray && f.Type.Array != nil && f.Type.Array.LengthExpr != "" {
 			return true
 		}
+		if f.OffsetExpr != "" {
+			return true
+		}
 	}
 	return false
 }
@@ -98,9 +101,10 @@ type ConditionalBranch struct {
 
 // Field is a resolved struct field.
 type Field struct {
-	Name   string
-	Type   *ResolvedType
-	Offset int // byte offset from struct start, -1 if dynamic
+	Name       string
+	Type       *ResolvedType
+	Offset     int    // byte offset from struct start, -1 if dynamic
+	OffsetExpr string // Go expression for absolute address (e.g. "result.BeginPtr"); empty if inline
 }
 
 // TypeKind classifies a resolved type.

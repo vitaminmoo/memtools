@@ -349,6 +349,25 @@ enum Status : u8 {
 	assert.Contains(t, src, `"fmt"`)
 }
 
+func TestGenerateRemoteArray(t *testing.T) {
+	src := mustGenerate(t, `
+struct StdVector {
+	u32 begin_ptr;
+	u32 end_ptr;
+	u32 capacity_ptr;
+	u32 elements[(end_ptr - begin_ptr) / 4] @ begin_ptr;
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "Elements")
+	assert.Contains(t, src, "make([]uint32")
+	// The array should be read from the absolute address in BeginPtr
+	assert.Contains(t, src, "int64(result.BeginPtr)")
+	// Length expression should reference sibling fields
+	assert.Contains(t, src, "result.EndPtr")
+	assert.Contains(t, src, "result.BeginPtr")
+}
+
 func TestGenerateExprArrayMultiByte(t *testing.T) {
 	src := mustGenerate(t, `
 struct Data {
