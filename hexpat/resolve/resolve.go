@@ -298,6 +298,11 @@ func (r *resolver) resolveStructFields(name string, sd *parser.StructDef) error 
 				field.Offset = offset
 				if field.Type.Size > 0 {
 					offset += field.Type.Size
+				} else if field.Type.Kind == KindStruct && field.Type.StructRef != nil && field.Type.StructRef.InlineSize > 0 {
+					// The struct's total Size is -1 (dynamic) because it
+					// contains remote/dynamic fields, but its InlineSize
+					// tells us how many bytes it occupies sequentially.
+					offset += field.Type.StructRef.InlineSize
 				}
 			}
 
@@ -321,6 +326,7 @@ func (r *resolver) resolveStructFields(name string, sd *parser.StructDef) error 
 		}
 	}
 
+	st.InlineSize = offset
 	st.Size = offset
 	if st.HasDynamicFields() {
 		st.Size = -1

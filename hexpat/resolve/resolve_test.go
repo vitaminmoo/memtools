@@ -620,3 +620,47 @@ struct StdVector {
 	assert.True(t, st.HasDynamicFields())
 	assert.Equal(t, -1, st.Size)
 }
+
+func TestResolveInlineSizeAfterRemoteField(t *testing.T) {
+	// When a struct type contains remote fields, its Size is -1 but its
+	// InlineSize is still valid. Fields that follow an instance of that
+	// struct must use InlineSize to compute their offset.
+	file := mustParse(t, `
+struct StdVector {
+	u64 begin_ptr;
+	u64 end_ptr;
+	u64 capacity_ptr;
+	u32 elements[(end_ptr - begin_ptr) / 4] @ begin_ptr;
+};
+
+struct Container {
+	u32 id;
+	StdVector vec;
+	u32 count;
+};
+`)
+	pkg, err := Resolve(file)
+	require.NoError(t, err)
+
+	var container *StructType
+	for _, s := range pkg.Structs {
+		if s.Name == "Container" {
+			container = s
+			break
+		}
+	}
+	require.NotNil(t, container)
+
+	fields := container.Fields()
+	require.Len(t, fields, 3)
+
+	assert.Equal(t, "Id", fields[0].Name)
+	assert.Equal(t, 0, fields[0].Offset)
+
+	assert.Equal(t, "Vec", fields[1].Name)
+	assert.Equal(t, 4, fields[1].Offset)
+
+	// vec's InlineSize is 24 (3×u64), so count should be at 4+24=28
+	assert.Equal(t, "Count", fields[2].Name)
+	assert.Equal(t, 28, fields[2].Offset)
+}

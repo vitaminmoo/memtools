@@ -19,10 +19,11 @@ type Package struct {
 
 // StructType is a resolved struct/union definition.
 type StructType struct {
-	Name    string
-	IsUnion bool
-	Members []StructMember
-	Size    int // -1 if dynamic
+	Name       string
+	IsUnion    bool
+	Members    []StructMember
+	Size       int // -1 if dynamic
+	InlineSize int // size of statically-known inline fields (valid even when Size == -1)
 }
 
 // Fields returns all fields, including those inside conditionals.
