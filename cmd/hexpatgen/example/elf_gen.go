@@ -7,6 +7,31 @@ import (
 	"github.com/vitaminmoo/memtools/hexpat/runtime"
 )
 
+type EIDATA uint8
+
+const (
+	EIDATAELFDATANONE EIDATA = 0
+	EIDATAELFDATA2LSB EIDATA = 1
+	EIDATAELFDATA2MSB EIDATA = 2
+)
+
+func (e EIDATA) String() string {
+	switch e {
+	case EIDATAELFDATA2LSB:
+		return fmt.Sprintf("ELFDATA2LSB (%d)", uint8(e))
+	case EIDATAELFDATA2MSB:
+		return fmt.Sprintf("ELFDATA2MSB (%d)", uint8(e))
+	case EIDATAELFDATANONE:
+		return fmt.Sprintf("ELFDATANONE (%d)", uint8(e))
+	default:
+		return fmt.Sprintf("unknown (%d)", uint8(e))
+	}
+}
+
+func (e EIDATA) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.String())
+}
+
 type EIVERSION uint8
 
 const (
@@ -26,6 +51,59 @@ func (e EIVERSION) String() string {
 }
 
 func (e EIVERSION) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.String())
+}
+
+type STV uint8
+
+const (
+	STVDEFAULT_  STV = 0
+	STVINTERNAL  STV = 1
+	STVHIDDEN    STV = 2
+	STVPROTECTED STV = 3
+)
+
+func (e STV) String() string {
+	switch e {
+	case STVDEFAULT_:
+		return fmt.Sprintf("DEFAULT_ (%d)", uint8(e))
+	case STVHIDDEN:
+		return fmt.Sprintf("HIDDEN (%d)", uint8(e))
+	case STVINTERNAL:
+		return fmt.Sprintf("INTERNAL (%d)", uint8(e))
+	case STVPROTECTED:
+		return fmt.Sprintf("PROTECTED (%d)", uint8(e))
+	default:
+		return fmt.Sprintf("unknown (%d)", uint8(e))
+	}
+}
+
+func (e STV) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.String())
+}
+
+type EICLASS uint8
+
+const (
+	EICLASSELFCLASSNONE EICLASS = 0
+	EICLASSELFCLASS32   EICLASS = 1
+	EICLASSELFCLASS64   EICLASS = 2
+)
+
+func (e EICLASS) String() string {
+	switch e {
+	case EICLASSELFCLASS32:
+		return fmt.Sprintf("ELFCLASS32 (%d)", uint8(e))
+	case EICLASSELFCLASS64:
+		return fmt.Sprintf("ELFCLASS64 (%d)", uint8(e))
+	case EICLASSELFCLASSNONE:
+		return fmt.Sprintf("ELFCLASSNONE (%d)", uint8(e))
+	default:
+		return fmt.Sprintf("unknown (%d)", uint8(e))
+	}
+}
+
+func (e EICLASS) MarshalJSON() ([]byte, error) {
 	return json.Marshal(e.String())
 }
 
@@ -291,31 +369,259 @@ func (e DT) MarshalJSON() ([]byte, error) {
 	return json.Marshal(e.String())
 }
 
-type STV uint8
+type PT uint32
 
 const (
-	STVDEFAULT_  STV = 0
-	STVINTERNAL  STV = 1
-	STVHIDDEN    STV = 2
-	STVPROTECTED STV = 3
+	PTNULL        PT = 0
+	PTLOAD        PT = 1
+	PTDYNAMIC     PT = 2
+	PTINTERP      PT = 3
+	PTNOTE        PT = 4
+	PTSHLIB       PT = 5
+	PTPHDR        PT = 6
+	PTTLS         PT = 7
+	PTLOOS        PT = 1610612736
+	PTHIOS        PT = 1879048191
+	PTGNUEHFRAME  PT = 1879048192
+	PTGNUSTACK    PT = 1879048193
+	PTGNURELRO    PT = 1879048194
+	PTGNUPROPERTY PT = 1879048195
+	PTSUNWBSS     PT = 1879048186
+	PTSUNWSTACK   PT = 1879048187
+	PTARMARCHEXT  PT = 1879048192
+	PTARMUNWIND   PT = 1879048193
 )
 
-func (e STV) String() string {
+func (e PT) String() string {
 	switch e {
-	case STVDEFAULT_:
-		return fmt.Sprintf("DEFAULT_ (%d)", uint8(e))
-	case STVHIDDEN:
-		return fmt.Sprintf("HIDDEN (%d)", uint8(e))
-	case STVINTERNAL:
-		return fmt.Sprintf("INTERNAL (%d)", uint8(e))
-	case STVPROTECTED:
-		return fmt.Sprintf("PROTECTED (%d)", uint8(e))
+	case PTARMARCHEXT:
+		return fmt.Sprintf("ARMARCHEXT (%d)", uint32(e))
+	case PTARMUNWIND:
+		return fmt.Sprintf("ARMUNWIND (%d)", uint32(e))
+	case PTDYNAMIC:
+		return fmt.Sprintf("DYNAMIC (%d)", uint32(e))
+	case PTGNUPROPERTY:
+		return fmt.Sprintf("GNUPROPERTY (%d)", uint32(e))
+	case PTGNURELRO:
+		return fmt.Sprintf("GNURELRO (%d)", uint32(e))
+	case PTHIOS:
+		return fmt.Sprintf("HIOS (%d)", uint32(e))
+	case PTINTERP:
+		return fmt.Sprintf("INTERP (%d)", uint32(e))
+	case PTLOAD:
+		return fmt.Sprintf("LOAD (%d)", uint32(e))
+	case PTLOOS:
+		return fmt.Sprintf("LOOS (%d)", uint32(e))
+	case PTNOTE:
+		return fmt.Sprintf("NOTE (%d)", uint32(e))
+	case PTNULL:
+		return fmt.Sprintf("NULL (%d)", uint32(e))
+	case PTPHDR:
+		return fmt.Sprintf("PHDR (%d)", uint32(e))
+	case PTSHLIB:
+		return fmt.Sprintf("SHLIB (%d)", uint32(e))
+	case PTSUNWBSS:
+		return fmt.Sprintf("SUNWBSS (%d)", uint32(e))
+	case PTSUNWSTACK:
+		return fmt.Sprintf("SUNWSTACK (%d)", uint32(e))
+	case PTTLS:
+		return fmt.Sprintf("TLS (%d)", uint32(e))
+	default:
+		return fmt.Sprintf("unknown (%d)", uint32(e))
+	}
+}
+
+func (e PT) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.String())
+}
+
+type ELFCOMPRESS uint8
+
+const (
+	ELFCOMPRESSZLIB ELFCOMPRESS = 1
+)
+
+func (e ELFCOMPRESS) String() string {
+	switch e {
+	case ELFCOMPRESSZLIB:
+		return fmt.Sprintf("ZLIB (%d)", uint8(e))
 	default:
 		return fmt.Sprintf("unknown (%d)", uint8(e))
 	}
 }
 
-func (e STV) MarshalJSON() ([]byte, error) {
+func (e ELFCOMPRESS) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.String())
+}
+
+type SHT uint32
+
+const (
+	SHTNULL                 SHT = 0
+	SHTPROGBITS             SHT = 1
+	SHTSYMTAB               SHT = 2
+	SHTSTRTAB               SHT = 3
+	SHTRELA                 SHT = 4
+	SHTHASH                 SHT = 5
+	SHTDYNAMIC              SHT = 6
+	SHTNOTE                 SHT = 7
+	SHTNOBITS               SHT = 8
+	SHTREL                  SHT = 9
+	SHTSHLIB                SHT = 10
+	SHTDYNSYM               SHT = 11
+	SHTUNKNOWN12            SHT = 12
+	SHTUNKNOWN13            SHT = 13
+	SHTINITARRAY            SHT = 14
+	SHTFINIARRAY            SHT = 15
+	SHTPREINITARRAY         SHT = 16
+	SHTGROUP                SHT = 17
+	SHTSYMTABSHNDX          SHT = 18
+	SHTGNUINCREMENTALINPUTS SHT = 1879000832
+	SHTGNUATTRIBUTES        SHT = 1879048181
+	SHTGNUHASH              SHT = 1879048182
+	SHTGNULIBLIST           SHT = 1879048183
+	SHTCHECKSUM             SHT = 1879048184
+	SHTSUNWMove             SHT = 1879048186
+	SHTSUNWCOMDAT           SHT = 1879048187
+	SHTSUNWSyminfo          SHT = 1879048188
+	SHTGNUVerdef            SHT = 1879048189
+	SHTGNUVerneed           SHT = 1879048190
+	SHTGNUVersym            SHT = 1879048191
+	SHTARMEXIDX             SHT = 1879048193
+	SHTARMPREEMPTMAP        SHT = 1879048194
+	SHTARMATTRIBUTES        SHT = 1879048195
+	SHTARMDEBUGOVERLAY      SHT = 1879048196
+	SHTARMOVERLAYSECTION    SHT = 1879048197
+)
+
+func (e SHT) String() string {
+	switch e {
+	case SHTARMATTRIBUTES:
+		return fmt.Sprintf("ARMATTRIBUTES (%d)", uint32(e))
+	case SHTARMDEBUGOVERLAY:
+		return fmt.Sprintf("ARMDEBUGOVERLAY (%d)", uint32(e))
+	case SHTARMEXIDX:
+		return fmt.Sprintf("ARMEXIDX (%d)", uint32(e))
+	case SHTARMOVERLAYSECTION:
+		return fmt.Sprintf("ARMOVERLAYSECTION (%d)", uint32(e))
+	case SHTARMPREEMPTMAP:
+		return fmt.Sprintf("ARMPREEMPTMAP (%d)", uint32(e))
+	case SHTCHECKSUM:
+		return fmt.Sprintf("CHECKSUM (%d)", uint32(e))
+	case SHTDYNAMIC:
+		return fmt.Sprintf("DYNAMIC (%d)", uint32(e))
+	case SHTDYNSYM:
+		return fmt.Sprintf("DYNSYM (%d)", uint32(e))
+	case SHTFINIARRAY:
+		return fmt.Sprintf("FINIARRAY (%d)", uint32(e))
+	case SHTGNUATTRIBUTES:
+		return fmt.Sprintf("GNUATTRIBUTES (%d)", uint32(e))
+	case SHTGNUHASH:
+		return fmt.Sprintf("GNUHASH (%d)", uint32(e))
+	case SHTGNUINCREMENTALINPUTS:
+		return fmt.Sprintf("GNUINCREMENTALINPUTS (%d)", uint32(e))
+	case SHTGNULIBLIST:
+		return fmt.Sprintf("GNULIBLIST (%d)", uint32(e))
+	case SHTGNUVerdef:
+		return fmt.Sprintf("GNUVerdef (%d)", uint32(e))
+	case SHTGNUVerneed:
+		return fmt.Sprintf("GNUVerneed (%d)", uint32(e))
+	case SHTGNUVersym:
+		return fmt.Sprintf("GNUVersym (%d)", uint32(e))
+	case SHTGROUP:
+		return fmt.Sprintf("GROUP (%d)", uint32(e))
+	case SHTHASH:
+		return fmt.Sprintf("HASH (%d)", uint32(e))
+	case SHTINITARRAY:
+		return fmt.Sprintf("INITARRAY (%d)", uint32(e))
+	case SHTNOBITS:
+		return fmt.Sprintf("NOBITS (%d)", uint32(e))
+	case SHTNOTE:
+		return fmt.Sprintf("NOTE (%d)", uint32(e))
+	case SHTNULL:
+		return fmt.Sprintf("NULL (%d)", uint32(e))
+	case SHTPREINITARRAY:
+		return fmt.Sprintf("PREINITARRAY (%d)", uint32(e))
+	case SHTPROGBITS:
+		return fmt.Sprintf("PROGBITS (%d)", uint32(e))
+	case SHTREL:
+		return fmt.Sprintf("REL (%d)", uint32(e))
+	case SHTRELA:
+		return fmt.Sprintf("RELA (%d)", uint32(e))
+	case SHTSHLIB:
+		return fmt.Sprintf("SHLIB (%d)", uint32(e))
+	case SHTSTRTAB:
+		return fmt.Sprintf("STRTAB (%d)", uint32(e))
+	case SHTSUNWCOMDAT:
+		return fmt.Sprintf("SUNWCOMDAT (%d)", uint32(e))
+	case SHTSUNWMove:
+		return fmt.Sprintf("SUNWMove (%d)", uint32(e))
+	case SHTSUNWSyminfo:
+		return fmt.Sprintf("SUNWSyminfo (%d)", uint32(e))
+	case SHTSYMTAB:
+		return fmt.Sprintf("SYMTAB (%d)", uint32(e))
+	case SHTSYMTABSHNDX:
+		return fmt.Sprintf("SYMTABSHNDX (%d)", uint32(e))
+	case SHTUNKNOWN12:
+		return fmt.Sprintf("UNKNOWN12 (%d)", uint32(e))
+	case SHTUNKNOWN13:
+		return fmt.Sprintf("UNKNOWN13 (%d)", uint32(e))
+	default:
+		return fmt.Sprintf("unknown (%d)", uint32(e))
+	}
+}
+
+func (e SHT) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.String())
+}
+
+type SYMINFOBT uint16
+
+const (
+	SYMINFOBTSELF   SYMINFOBT = 65535
+	SYMINFOBTPARENT SYMINFOBT = 65534
+	SYMINFOBTNONE   SYMINFOBT = 65533
+)
+
+func (e SYMINFOBT) String() string {
+	switch e {
+	case SYMINFOBTNONE:
+		return fmt.Sprintf("NONE (%d)", uint16(e))
+	case SYMINFOBTPARENT:
+		return fmt.Sprintf("PARENT (%d)", uint16(e))
+	case SYMINFOBTSELF:
+		return fmt.Sprintf("SELF (%d)", uint16(e))
+	default:
+		return fmt.Sprintf("unknown (%d)", uint16(e))
+	}
+}
+
+func (e SYMINFOBT) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.String())
+}
+
+type VERNDX uint16
+
+const (
+	VERNDXLOCAL     VERNDX = 0
+	VERNDXGLOBAL    VERNDX = 1
+	VERNDXELIMINATE VERNDX = 65281
+)
+
+func (e VERNDX) String() string {
+	switch e {
+	case VERNDXELIMINATE:
+		return fmt.Sprintf("ELIMINATE (%d)", uint16(e))
+	case VERNDXGLOBAL:
+		return fmt.Sprintf("GLOBAL (%d)", uint16(e))
+	case VERNDXLOCAL:
+		return fmt.Sprintf("LOCAL (%d)", uint16(e))
+	default:
+		return fmt.Sprintf("unknown (%d)", uint16(e))
+	}
+}
+
+func (e VERNDX) MarshalJSON() ([]byte, error) {
 	return json.Marshal(e.String())
 }
 
@@ -958,6 +1264,31 @@ func (e EM) MarshalJSON() ([]byte, error) {
 	return json.Marshal(e.String())
 }
 
+type RT uint32
+
+const (
+	RTCONSISTENT RT = 0
+	RTADD        RT = 1
+	RTDELETE     RT = 2
+)
+
+func (e RT) String() string {
+	switch e {
+	case RTADD:
+		return fmt.Sprintf("ADD (%d)", uint32(e))
+	case RTCONSISTENT:
+		return fmt.Sprintf("CONSISTENT (%d)", uint32(e))
+	case RTDELETE:
+		return fmt.Sprintf("DELETE (%d)", uint32(e))
+	default:
+		return fmt.Sprintf("unknown (%d)", uint32(e))
+	}
+}
+
+func (e RT) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.String())
+}
+
 type SHN uint16
 
 const (
@@ -989,446 +1320,6 @@ func (e SHN) String() string {
 }
 
 func (e SHN) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
-}
-
-type SHT uint32
-
-const (
-	SHTNULL                 SHT = 0
-	SHTPROGBITS             SHT = 1
-	SHTSYMTAB               SHT = 2
-	SHTSTRTAB               SHT = 3
-	SHTRELA                 SHT = 4
-	SHTHASH                 SHT = 5
-	SHTDYNAMIC              SHT = 6
-	SHTNOTE                 SHT = 7
-	SHTNOBITS               SHT = 8
-	SHTREL                  SHT = 9
-	SHTSHLIB                SHT = 10
-	SHTDYNSYM               SHT = 11
-	SHTUNKNOWN12            SHT = 12
-	SHTUNKNOWN13            SHT = 13
-	SHTINITARRAY            SHT = 14
-	SHTFINIARRAY            SHT = 15
-	SHTPREINITARRAY         SHT = 16
-	SHTGROUP                SHT = 17
-	SHTSYMTABSHNDX          SHT = 18
-	SHTGNUINCREMENTALINPUTS SHT = 1879000832
-	SHTGNUATTRIBUTES        SHT = 1879048181
-	SHTGNUHASH              SHT = 1879048182
-	SHTGNULIBLIST           SHT = 1879048183
-	SHTCHECKSUM             SHT = 1879048184
-	SHTSUNWMove             SHT = 1879048186
-	SHTSUNWCOMDAT           SHT = 1879048187
-	SHTSUNWSyminfo          SHT = 1879048188
-	SHTGNUVerdef            SHT = 1879048189
-	SHTGNUVerneed           SHT = 1879048190
-	SHTGNUVersym            SHT = 1879048191
-	SHTARMEXIDX             SHT = 1879048193
-	SHTARMPREEMPTMAP        SHT = 1879048194
-	SHTARMATTRIBUTES        SHT = 1879048195
-	SHTARMDEBUGOVERLAY      SHT = 1879048196
-	SHTARMOVERLAYSECTION    SHT = 1879048197
-)
-
-func (e SHT) String() string {
-	switch e {
-	case SHTARMATTRIBUTES:
-		return fmt.Sprintf("ARMATTRIBUTES (%d)", uint32(e))
-	case SHTARMDEBUGOVERLAY:
-		return fmt.Sprintf("ARMDEBUGOVERLAY (%d)", uint32(e))
-	case SHTARMEXIDX:
-		return fmt.Sprintf("ARMEXIDX (%d)", uint32(e))
-	case SHTARMOVERLAYSECTION:
-		return fmt.Sprintf("ARMOVERLAYSECTION (%d)", uint32(e))
-	case SHTARMPREEMPTMAP:
-		return fmt.Sprintf("ARMPREEMPTMAP (%d)", uint32(e))
-	case SHTCHECKSUM:
-		return fmt.Sprintf("CHECKSUM (%d)", uint32(e))
-	case SHTDYNAMIC:
-		return fmt.Sprintf("DYNAMIC (%d)", uint32(e))
-	case SHTDYNSYM:
-		return fmt.Sprintf("DYNSYM (%d)", uint32(e))
-	case SHTFINIARRAY:
-		return fmt.Sprintf("FINIARRAY (%d)", uint32(e))
-	case SHTGNUATTRIBUTES:
-		return fmt.Sprintf("GNUATTRIBUTES (%d)", uint32(e))
-	case SHTGNUHASH:
-		return fmt.Sprintf("GNUHASH (%d)", uint32(e))
-	case SHTGNUINCREMENTALINPUTS:
-		return fmt.Sprintf("GNUINCREMENTALINPUTS (%d)", uint32(e))
-	case SHTGNULIBLIST:
-		return fmt.Sprintf("GNULIBLIST (%d)", uint32(e))
-	case SHTGNUVerdef:
-		return fmt.Sprintf("GNUVerdef (%d)", uint32(e))
-	case SHTGNUVerneed:
-		return fmt.Sprintf("GNUVerneed (%d)", uint32(e))
-	case SHTGNUVersym:
-		return fmt.Sprintf("GNUVersym (%d)", uint32(e))
-	case SHTGROUP:
-		return fmt.Sprintf("GROUP (%d)", uint32(e))
-	case SHTHASH:
-		return fmt.Sprintf("HASH (%d)", uint32(e))
-	case SHTINITARRAY:
-		return fmt.Sprintf("INITARRAY (%d)", uint32(e))
-	case SHTNOBITS:
-		return fmt.Sprintf("NOBITS (%d)", uint32(e))
-	case SHTNOTE:
-		return fmt.Sprintf("NOTE (%d)", uint32(e))
-	case SHTNULL:
-		return fmt.Sprintf("NULL (%d)", uint32(e))
-	case SHTPREINITARRAY:
-		return fmt.Sprintf("PREINITARRAY (%d)", uint32(e))
-	case SHTPROGBITS:
-		return fmt.Sprintf("PROGBITS (%d)", uint32(e))
-	case SHTREL:
-		return fmt.Sprintf("REL (%d)", uint32(e))
-	case SHTRELA:
-		return fmt.Sprintf("RELA (%d)", uint32(e))
-	case SHTSHLIB:
-		return fmt.Sprintf("SHLIB (%d)", uint32(e))
-	case SHTSTRTAB:
-		return fmt.Sprintf("STRTAB (%d)", uint32(e))
-	case SHTSUNWCOMDAT:
-		return fmt.Sprintf("SUNWCOMDAT (%d)", uint32(e))
-	case SHTSUNWMove:
-		return fmt.Sprintf("SUNWMove (%d)", uint32(e))
-	case SHTSUNWSyminfo:
-		return fmt.Sprintf("SUNWSyminfo (%d)", uint32(e))
-	case SHTSYMTAB:
-		return fmt.Sprintf("SYMTAB (%d)", uint32(e))
-	case SHTSYMTABSHNDX:
-		return fmt.Sprintf("SYMTABSHNDX (%d)", uint32(e))
-	case SHTUNKNOWN12:
-		return fmt.Sprintf("UNKNOWN12 (%d)", uint32(e))
-	case SHTUNKNOWN13:
-		return fmt.Sprintf("UNKNOWN13 (%d)", uint32(e))
-	default:
-		return fmt.Sprintf("unknown (%d)", uint32(e))
-	}
-}
-
-func (e SHT) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
-}
-
-type SYMINFOBT uint16
-
-const (
-	SYMINFOBTSELF   SYMINFOBT = 65535
-	SYMINFOBTPARENT SYMINFOBT = 65534
-	SYMINFOBTNONE   SYMINFOBT = 65533
-)
-
-func (e SYMINFOBT) String() string {
-	switch e {
-	case SYMINFOBTNONE:
-		return fmt.Sprintf("NONE (%d)", uint16(e))
-	case SYMINFOBTPARENT:
-		return fmt.Sprintf("PARENT (%d)", uint16(e))
-	case SYMINFOBTSELF:
-		return fmt.Sprintf("SELF (%d)", uint16(e))
-	default:
-		return fmt.Sprintf("unknown (%d)", uint16(e))
-	}
-}
-
-func (e SYMINFOBT) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
-}
-
-type EIDATA uint8
-
-const (
-	EIDATAELFDATANONE EIDATA = 0
-	EIDATAELFDATA2LSB EIDATA = 1
-	EIDATAELFDATA2MSB EIDATA = 2
-)
-
-func (e EIDATA) String() string {
-	switch e {
-	case EIDATAELFDATA2LSB:
-		return fmt.Sprintf("ELFDATA2LSB (%d)", uint8(e))
-	case EIDATAELFDATA2MSB:
-		return fmt.Sprintf("ELFDATA2MSB (%d)", uint8(e))
-	case EIDATAELFDATANONE:
-		return fmt.Sprintf("ELFDATANONE (%d)", uint8(e))
-	default:
-		return fmt.Sprintf("unknown (%d)", uint8(e))
-	}
-}
-
-func (e EIDATA) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
-}
-
-type ET uint16
-
-const (
-	ETNONE ET = 0
-	ETREL  ET = 1
-	ETEXEC ET = 2
-	ETDYN  ET = 3
-	ETCORE ET = 4
-)
-
-func (e ET) String() string {
-	switch e {
-	case ETCORE:
-		return fmt.Sprintf("CORE (%d)", uint16(e))
-	case ETDYN:
-		return fmt.Sprintf("DYN (%d)", uint16(e))
-	case ETEXEC:
-		return fmt.Sprintf("EXEC (%d)", uint16(e))
-	case ETNONE:
-		return fmt.Sprintf("NONE (%d)", uint16(e))
-	case ETREL:
-		return fmt.Sprintf("REL (%d)", uint16(e))
-	default:
-		return fmt.Sprintf("unknown (%d)", uint16(e))
-	}
-}
-
-func (e ET) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
-}
-
-type PT uint32
-
-const (
-	PTNULL        PT = 0
-	PTLOAD        PT = 1
-	PTDYNAMIC     PT = 2
-	PTINTERP      PT = 3
-	PTNOTE        PT = 4
-	PTSHLIB       PT = 5
-	PTPHDR        PT = 6
-	PTTLS         PT = 7
-	PTLOOS        PT = 1610612736
-	PTHIOS        PT = 1879048191
-	PTGNUEHFRAME  PT = 1879048192
-	PTGNUSTACK    PT = 1879048193
-	PTGNURELRO    PT = 1879048194
-	PTGNUPROPERTY PT = 1879048195
-	PTSUNWBSS     PT = 1879048186
-	PTSUNWSTACK   PT = 1879048187
-	PTARMARCHEXT  PT = 1879048192
-	PTARMUNWIND   PT = 1879048193
-)
-
-func (e PT) String() string {
-	switch e {
-	case PTARMARCHEXT:
-		return fmt.Sprintf("ARMARCHEXT (%d)", uint32(e))
-	case PTARMUNWIND:
-		return fmt.Sprintf("ARMUNWIND (%d)", uint32(e))
-	case PTDYNAMIC:
-		return fmt.Sprintf("DYNAMIC (%d)", uint32(e))
-	case PTGNUPROPERTY:
-		return fmt.Sprintf("GNUPROPERTY (%d)", uint32(e))
-	case PTGNURELRO:
-		return fmt.Sprintf("GNURELRO (%d)", uint32(e))
-	case PTHIOS:
-		return fmt.Sprintf("HIOS (%d)", uint32(e))
-	case PTINTERP:
-		return fmt.Sprintf("INTERP (%d)", uint32(e))
-	case PTLOAD:
-		return fmt.Sprintf("LOAD (%d)", uint32(e))
-	case PTLOOS:
-		return fmt.Sprintf("LOOS (%d)", uint32(e))
-	case PTNOTE:
-		return fmt.Sprintf("NOTE (%d)", uint32(e))
-	case PTNULL:
-		return fmt.Sprintf("NULL (%d)", uint32(e))
-	case PTPHDR:
-		return fmt.Sprintf("PHDR (%d)", uint32(e))
-	case PTSHLIB:
-		return fmt.Sprintf("SHLIB (%d)", uint32(e))
-	case PTSUNWBSS:
-		return fmt.Sprintf("SUNWBSS (%d)", uint32(e))
-	case PTSUNWSTACK:
-		return fmt.Sprintf("SUNWSTACK (%d)", uint32(e))
-	case PTTLS:
-		return fmt.Sprintf("TLS (%d)", uint32(e))
-	default:
-		return fmt.Sprintf("unknown (%d)", uint32(e))
-	}
-}
-
-func (e PT) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
-}
-
-type VERNDX uint16
-
-const (
-	VERNDXLOCAL     VERNDX = 0
-	VERNDXGLOBAL    VERNDX = 1
-	VERNDXELIMINATE VERNDX = 65281
-)
-
-func (e VERNDX) String() string {
-	switch e {
-	case VERNDXELIMINATE:
-		return fmt.Sprintf("ELIMINATE (%d)", uint16(e))
-	case VERNDXGLOBAL:
-		return fmt.Sprintf("GLOBAL (%d)", uint16(e))
-	case VERNDXLOCAL:
-		return fmt.Sprintf("LOCAL (%d)", uint16(e))
-	default:
-		return fmt.Sprintf("unknown (%d)", uint16(e))
-	}
-}
-
-func (e VERNDX) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
-}
-
-type STT uint32
-
-const (
-	STTSTTNOTYPE   STT = 0
-	STTSTTOBJECT   STT = 1
-	STTSTTFUNC     STT = 2
-	STTSTTSECTION  STT = 3
-	STTSTTFILE     STT = 4
-	STTSTTCOMMON   STT = 5
-	STTSTTTLS      STT = 6
-	STTSTTNUM      STT = 7
-	STTSTTLOOS     STT = 10
-	STTSTTGNUIFUNC STT = 10
-	STTSTTHIOS     STT = 12
-	STTSTTLOPROC   STT = 13
-	STTSTTHIPROC   STT = 15
-)
-
-func (e STT) String() string {
-	switch e {
-	case STTSTTCOMMON:
-		return fmt.Sprintf("STTCOMMON (%d)", uint32(e))
-	case STTSTTFILE:
-		return fmt.Sprintf("STTFILE (%d)", uint32(e))
-	case STTSTTFUNC:
-		return fmt.Sprintf("STTFUNC (%d)", uint32(e))
-	case STTSTTGNUIFUNC:
-		return fmt.Sprintf("STTGNUIFUNC (%d)", uint32(e))
-	case STTSTTHIOS:
-		return fmt.Sprintf("STTHIOS (%d)", uint32(e))
-	case STTSTTHIPROC:
-		return fmt.Sprintf("STTHIPROC (%d)", uint32(e))
-	case STTSTTLOPROC:
-		return fmt.Sprintf("STTLOPROC (%d)", uint32(e))
-	case STTSTTNOTYPE:
-		return fmt.Sprintf("STTNOTYPE (%d)", uint32(e))
-	case STTSTTNUM:
-		return fmt.Sprintf("STTNUM (%d)", uint32(e))
-	case STTSTTOBJECT:
-		return fmt.Sprintf("STTOBJECT (%d)", uint32(e))
-	case STTSTTSECTION:
-		return fmt.Sprintf("STTSECTION (%d)", uint32(e))
-	case STTSTTTLS:
-		return fmt.Sprintf("STTTLS (%d)", uint32(e))
-	default:
-		return fmt.Sprintf("unknown (%d)", uint32(e))
-	}
-}
-
-func (e STT) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
-}
-
-type EICLASS uint8
-
-const (
-	EICLASSELFCLASSNONE EICLASS = 0
-	EICLASSELFCLASS32   EICLASS = 1
-	EICLASSELFCLASS64   EICLASS = 2
-)
-
-func (e EICLASS) String() string {
-	switch e {
-	case EICLASSELFCLASS32:
-		return fmt.Sprintf("ELFCLASS32 (%d)", uint8(e))
-	case EICLASSELFCLASS64:
-		return fmt.Sprintf("ELFCLASS64 (%d)", uint8(e))
-	case EICLASSELFCLASSNONE:
-		return fmt.Sprintf("ELFCLASSNONE (%d)", uint8(e))
-	default:
-		return fmt.Sprintf("unknown (%d)", uint8(e))
-	}
-}
-
-func (e EICLASS) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
-}
-
-type RT uint32
-
-const (
-	RTCONSISTENT RT = 0
-	RTADD        RT = 1
-	RTDELETE     RT = 2
-)
-
-func (e RT) String() string {
-	switch e {
-	case RTADD:
-		return fmt.Sprintf("ADD (%d)", uint32(e))
-	case RTCONSISTENT:
-		return fmt.Sprintf("CONSISTENT (%d)", uint32(e))
-	case RTDELETE:
-		return fmt.Sprintf("DELETE (%d)", uint32(e))
-	default:
-		return fmt.Sprintf("unknown (%d)", uint32(e))
-	}
-}
-
-func (e RT) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
-}
-
-type ELFCOMPRESS uint8
-
-const (
-	ELFCOMPRESSZLIB ELFCOMPRESS = 1
-)
-
-func (e ELFCOMPRESS) String() string {
-	switch e {
-	case ELFCOMPRESSZLIB:
-		return fmt.Sprintf("ZLIB (%d)", uint8(e))
-	default:
-		return fmt.Sprintf("unknown (%d)", uint8(e))
-	}
-}
-
-func (e ELFCOMPRESS) MarshalJSON() ([]byte, error) {
-	return json.Marshal(e.String())
-}
-
-type VERDEF uint16
-
-const (
-	VERDEFNON     VERDEF = 0
-	VERDEFCURRENT VERDEF = 1
-	VERDEFNUM     VERDEF = 2
-)
-
-func (e VERDEF) String() string {
-	switch e {
-	case VERDEFCURRENT:
-		return fmt.Sprintf("CURRENT (%d)", uint16(e))
-	case VERDEFNON:
-		return fmt.Sprintf("NON (%d)", uint16(e))
-	case VERDEFNUM:
-		return fmt.Sprintf("NUM (%d)", uint16(e))
-	default:
-		return fmt.Sprintf("unknown (%d)", uint16(e))
-	}
-}
-
-func (e VERDEF) MarshalJSON() ([]byte, error) {
 	return json.Marshal(e.String())
 }
 
@@ -1498,6 +1389,115 @@ func (e STB) MarshalJSON() ([]byte, error) {
 	return json.Marshal(e.String())
 }
 
+type ET uint16
+
+const (
+	ETNONE ET = 0
+	ETREL  ET = 1
+	ETEXEC ET = 2
+	ETDYN  ET = 3
+	ETCORE ET = 4
+)
+
+func (e ET) String() string {
+	switch e {
+	case ETCORE:
+		return fmt.Sprintf("CORE (%d)", uint16(e))
+	case ETDYN:
+		return fmt.Sprintf("DYN (%d)", uint16(e))
+	case ETEXEC:
+		return fmt.Sprintf("EXEC (%d)", uint16(e))
+	case ETNONE:
+		return fmt.Sprintf("NONE (%d)", uint16(e))
+	case ETREL:
+		return fmt.Sprintf("REL (%d)", uint16(e))
+	default:
+		return fmt.Sprintf("unknown (%d)", uint16(e))
+	}
+}
+
+func (e ET) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.String())
+}
+
+type VERDEF uint16
+
+const (
+	VERDEFNON     VERDEF = 0
+	VERDEFCURRENT VERDEF = 1
+	VERDEFNUM     VERDEF = 2
+)
+
+func (e VERDEF) String() string {
+	switch e {
+	case VERDEFCURRENT:
+		return fmt.Sprintf("CURRENT (%d)", uint16(e))
+	case VERDEFNON:
+		return fmt.Sprintf("NON (%d)", uint16(e))
+	case VERDEFNUM:
+		return fmt.Sprintf("NUM (%d)", uint16(e))
+	default:
+		return fmt.Sprintf("unknown (%d)", uint16(e))
+	}
+}
+
+func (e VERDEF) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.String())
+}
+
+type STT uint32
+
+const (
+	STTSTTNOTYPE   STT = 0
+	STTSTTOBJECT   STT = 1
+	STTSTTFUNC     STT = 2
+	STTSTTSECTION  STT = 3
+	STTSTTFILE     STT = 4
+	STTSTTCOMMON   STT = 5
+	STTSTTTLS      STT = 6
+	STTSTTNUM      STT = 7
+	STTSTTLOOS     STT = 10
+	STTSTTGNUIFUNC STT = 10
+	STTSTTHIOS     STT = 12
+	STTSTTLOPROC   STT = 13
+	STTSTTHIPROC   STT = 15
+)
+
+func (e STT) String() string {
+	switch e {
+	case STTSTTCOMMON:
+		return fmt.Sprintf("STTCOMMON (%d)", uint32(e))
+	case STTSTTFILE:
+		return fmt.Sprintf("STTFILE (%d)", uint32(e))
+	case STTSTTFUNC:
+		return fmt.Sprintf("STTFUNC (%d)", uint32(e))
+	case STTSTTGNUIFUNC:
+		return fmt.Sprintf("STTGNUIFUNC (%d)", uint32(e))
+	case STTSTTHIOS:
+		return fmt.Sprintf("STTHIOS (%d)", uint32(e))
+	case STTSTTHIPROC:
+		return fmt.Sprintf("STTHIPROC (%d)", uint32(e))
+	case STTSTTLOPROC:
+		return fmt.Sprintf("STTLOPROC (%d)", uint32(e))
+	case STTSTTNOTYPE:
+		return fmt.Sprintf("STTNOTYPE (%d)", uint32(e))
+	case STTSTTNUM:
+		return fmt.Sprintf("STTNUM (%d)", uint32(e))
+	case STTSTTOBJECT:
+		return fmt.Sprintf("STTOBJECT (%d)", uint32(e))
+	case STTSTTSECTION:
+		return fmt.Sprintf("STTSECTION (%d)", uint32(e))
+	case STTSTTTLS:
+		return fmt.Sprintf("STTTLS (%d)", uint32(e))
+	default:
+		return fmt.Sprintf("unknown (%d)", uint32(e))
+	}
+}
+
+func (e STT) MarshalJSON() ([]byte, error) {
+	return json.Marshal(e.String())
+}
+
 type SYMINFOFLG struct {
 	DIRECT      bool
 	RESERVED    bool
@@ -1547,39 +1547,15 @@ type PF struct {
 	MASKPROC uint8
 }
 
-type Elf64Rel struct {
+type Elf64Rela struct {
 	ROffset uint64
 	RInfo   ELF64RINFO
+	RAddend int64
 }
 
-type EIDENT struct {
-	EICLASS      EICLASS
-	EIDATA       EIDATA
-	EIVERSION    EIVERSION
-	EIOSABI      EIOSABI
-	EIABIVERSION uint8
-}
-
-type ELF struct {
-	EIdent EIDENT
-}
-
-type Elf32Syminfo struct {
+type Elf64Syminfo struct {
 	SiBoundto uint16
 	SiFlags   SYMINFOFLG
-}
-
-type Elf64Shdr struct {
-	ShName      uint32
-	ShType      SHT
-	ShFlags     SHF
-	ShAddr      uint64
-	ShOffset    uint64
-	ShSize      uint64
-	ShLink      uint32
-	ShInfo      uint32
-	ShAddralign uint64
-	ShEntsize   uint64
 }
 
 type Elf64Ehdr struct {
@@ -1596,39 +1572,6 @@ type Elf64Ehdr struct {
 	EShentsize uint16
 	EShnum     uint16
 	EShstrndx  uint16
-}
-
-type Elf32Rel struct {
-	ROffset uint32
-	RInfo   ELF32RINFO
-}
-
-type String struct {
-	Value byte
-}
-
-type Elf32Shdr struct {
-	ShName      uint32
-	ShType      SHT
-	ShFlags     SHF
-	ShAddr      uint32
-	ShOffset    uint32
-	ShSize      uint32
-	ShLink      uint32
-	ShInfo      uint32
-	ShAddralign uint32
-	ShEntsize   uint32
-}
-
-type Elf64Chdr struct {
-	ChType      uint32
-	ChSize      uint32
-	ChAddralign uint32
-}
-
-type Elf64Syminfo struct {
-	SiBoundto uint16
-	SiFlags   SYMINFOFLG
 }
 
 type Elf32Phdr struct {
@@ -1653,22 +1596,58 @@ type Elf64Phdr struct {
 	PAlign  uint64
 }
 
+type String struct {
+	Value byte
+}
+
+type EIDENT struct {
+	EICLASS      EICLASS
+	EIDATA       EIDATA
+	EIVERSION    EIVERSION
+	EIOSABI      EIOSABI
+	EIABIVERSION uint8
+}
+
+type ELF struct {
+	EIdent EIDENT
+}
+
 type Elf32Chdr struct {
 	ChType      uint32
 	ChSize      uint32
 	ChAddralign uint32
 }
 
-type Elf32Rela struct {
-	ROffset uint32
-	RInfo   ELF32RINFO
-	RAddend int32
+type Elf32Sym struct {
+	StName  uint32
+	StValue uint32
+	StSize  uint32
+	StInfo  ST
+	StOther STV
+	StShndx uint16
 }
 
-type Elf64Rela struct {
+type Elf32Syminfo struct {
+	SiBoundto uint16
+	SiFlags   SYMINFOFLG
+}
+
+type Elf32Shdr struct {
+	ShName      uint32
+	ShType      SHT
+	ShFlags     SHF
+	ShAddr      uint32
+	ShOffset    uint32
+	ShSize      uint32
+	ShLink      uint32
+	ShInfo      uint32
+	ShAddralign uint32
+	ShEntsize   uint32
+}
+
+type Elf64Rel struct {
 	ROffset uint64
 	RInfo   ELF64RINFO
-	RAddend int64
 }
 
 type Elf64Sym struct {
@@ -1678,6 +1657,30 @@ type Elf64Sym struct {
 	StShndx uint16
 	StValue uint64
 	StSize  uint64
+}
+
+type Elf64Shdr struct {
+	ShName      uint32
+	ShType      SHT
+	ShFlags     SHF
+	ShAddr      uint64
+	ShOffset    uint64
+	ShSize      uint64
+	ShLink      uint32
+	ShInfo      uint32
+	ShAddralign uint64
+	ShEntsize   uint64
+}
+
+type Elf32Rel struct {
+	ROffset uint32
+	RInfo   ELF32RINFO
+}
+
+type Elf32Rela struct {
+	ROffset uint32
+	RInfo   ELF32RINFO
+	RAddend int32
 }
 
 type Elf32Ehdr struct {
@@ -1696,13 +1699,10 @@ type Elf32Ehdr struct {
 	EShstrndx  uint16
 }
 
-type Elf32Sym struct {
-	StName  uint32
-	StValue uint32
-	StSize  uint32
-	StInfo  ST
-	StOther STV
-	StShndx uint16
+type Elf64Chdr struct {
+	ChType      uint32
+	ChSize      uint32
+	ChAddralign uint32
 }
 
 func ReadSYMINFOFLG(ctx *runtime.ReadContext, addr uintptr) (*SYMINFOFLG, runtime.Errors) {
@@ -1808,14 +1808,14 @@ func ReadPF(ctx *runtime.ReadContext, addr uintptr) (*PF, runtime.Errors) {
 	return result, errs
 }
 
-func ReadElf64Rel(ctx *runtime.ReadContext, addr uintptr) (*Elf64Rel, runtime.Errors) {
+func ReadElf64Rela(ctx *runtime.ReadContext, addr uintptr) (*Elf64Rela, runtime.Errors) {
 	var errs runtime.Errors
-	result := &Elf64Rel{}
+	result := &Elf64Rela{}
 	var buf [8]byte
 
 	// Field: ROffset at int64(addr)+0
 	if _, err := ctx.ReadAt(buf[:8], int64(addr)+0); err != nil {
-		errs.Add("Elf64Rel.ROffset", uintptr(int64(addr)+0), err)
+		errs.Add("Elf64Rela.ROffset", uintptr(int64(addr)+0), err)
 	} else {
 		result.ROffset = binary.LittleEndian.Uint64(buf[:8])
 	}
@@ -1829,76 +1829,24 @@ func ReadElf64Rel(ctx *runtime.ReadContext, addr uintptr) (*Elf64Rel, runtime.Er
 		errs = append(errs, childErrs...)
 	}
 
-	return result, errs
-}
-
-func ReadEIDENT(ctx *runtime.ReadContext, addr uintptr) (*EIDENT, runtime.Errors) {
-	var errs runtime.Errors
-	result := &EIDENT{}
-	var buf [1]byte
-
-	// Field: EICLASS (enum) at int64(addr)+4
-	if _, err := ctx.ReadAt(buf[:1], int64(addr)+4); err != nil {
-		errs.Add("EIDENT.EICLASS", uintptr(int64(addr)+4), err)
+	// Field: RAddend at int64(addr)+16
+	if _, err := ctx.ReadAt(buf[:8], int64(addr)+16); err != nil {
+		errs.Add("Elf64Rela.RAddend", uintptr(int64(addr)+16), err)
 	} else {
-		result.EICLASS = EICLASS(buf[0])
-	}
-
-	// Field: EIDATA (enum) at int64(addr)+5
-	if _, err := ctx.ReadAt(buf[:1], int64(addr)+5); err != nil {
-		errs.Add("EIDENT.EIDATA", uintptr(int64(addr)+5), err)
-	} else {
-		result.EIDATA = EIDATA(buf[0])
-	}
-
-	// Field: EIVERSION (enum) at int64(addr)+6
-	if _, err := ctx.ReadAt(buf[:1], int64(addr)+6); err != nil {
-		errs.Add("EIDENT.EIVERSION", uintptr(int64(addr)+6), err)
-	} else {
-		result.EIVERSION = EIVERSION(buf[0])
-	}
-
-	// Field: EIOSABI (enum) at int64(addr)+7
-	if _, err := ctx.ReadAt(buf[:1], int64(addr)+7); err != nil {
-		errs.Add("EIDENT.EIOSABI", uintptr(int64(addr)+7), err)
-	} else {
-		result.EIOSABI = EIOSABI(buf[0])
-	}
-
-	// Field: EIABIVERSION at int64(addr)+8
-	if _, err := ctx.ReadAt(buf[:1], int64(addr)+8); err != nil {
-		errs.Add("EIDENT.EIABIVERSION", uintptr(int64(addr)+8), err)
-	} else {
-		result.EIABIVERSION = buf[0]
+		result.RAddend = int64(binary.LittleEndian.Uint64(buf[:8]))
 	}
 
 	return result, errs
 }
 
-func ReadELF(ctx *runtime.ReadContext, addr uintptr) (*ELF, runtime.Errors) {
+func ReadElf64Syminfo(ctx *runtime.ReadContext, addr uintptr) (*Elf64Syminfo, runtime.Errors) {
 	var errs runtime.Errors
-	result := &ELF{}
-
-	// Field: EIdent at int64(addr)+0
-	{
-		child, childErrs := ReadEIDENT(ctx, uintptr(int64(addr)+0))
-		if child != nil {
-			result.EIdent = *child
-		}
-		errs = append(errs, childErrs...)
-	}
-
-	return result, errs
-}
-
-func ReadElf32Syminfo(ctx *runtime.ReadContext, addr uintptr) (*Elf32Syminfo, runtime.Errors) {
-	var errs runtime.Errors
-	result := &Elf32Syminfo{}
+	result := &Elf64Syminfo{}
 	var buf [2]byte
 
 	// Field: SiBoundto at int64(addr)+0
 	if _, err := ctx.ReadAt(buf[:2], int64(addr)+0); err != nil {
-		errs.Add("Elf32Syminfo.SiBoundto", uintptr(int64(addr)+0), err)
+		errs.Add("Elf64Syminfo.SiBoundto", uintptr(int64(addr)+0), err)
 	} else {
 		result.SiBoundto = binary.LittleEndian.Uint16(buf[:2])
 	}
@@ -1910,86 +1858,6 @@ func ReadElf32Syminfo(ctx *runtime.ReadContext, addr uintptr) (*Elf32Syminfo, ru
 			result.SiFlags = *child
 		}
 		errs = append(errs, childErrs...)
-	}
-
-	return result, errs
-}
-
-func ReadElf64Shdr(ctx *runtime.ReadContext, addr uintptr) (*Elf64Shdr, runtime.Errors) {
-	var errs runtime.Errors
-	result := &Elf64Shdr{}
-	var buf [8]byte
-
-	// Field: ShName at int64(addr)+0
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+0); err != nil {
-		errs.Add("Elf64Shdr.ShName", uintptr(int64(addr)+0), err)
-	} else {
-		result.ShName = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: ShType (enum) at int64(addr)+4
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+4); err != nil {
-		errs.Add("Elf64Shdr.ShType", uintptr(int64(addr)+4), err)
-	} else {
-		result.ShType = SHT(binary.LittleEndian.Uint32(buf[:4]))
-	}
-
-	// Field: ShFlags at int64(addr)+8
-	{
-		child, childErrs := ReadSHF(ctx, uintptr(int64(addr)+8))
-		if child != nil {
-			result.ShFlags = *child
-		}
-		errs = append(errs, childErrs...)
-	}
-
-	// Field: ShAddr at int64(addr)+16
-	if _, err := ctx.ReadAt(buf[:8], int64(addr)+16); err != nil {
-		errs.Add("Elf64Shdr.ShAddr", uintptr(int64(addr)+16), err)
-	} else {
-		result.ShAddr = binary.LittleEndian.Uint64(buf[:8])
-	}
-
-	// Field: ShOffset at int64(addr)+24
-	if _, err := ctx.ReadAt(buf[:8], int64(addr)+24); err != nil {
-		errs.Add("Elf64Shdr.ShOffset", uintptr(int64(addr)+24), err)
-	} else {
-		result.ShOffset = binary.LittleEndian.Uint64(buf[:8])
-	}
-
-	// Field: ShSize at int64(addr)+32
-	if _, err := ctx.ReadAt(buf[:8], int64(addr)+32); err != nil {
-		errs.Add("Elf64Shdr.ShSize", uintptr(int64(addr)+32), err)
-	} else {
-		result.ShSize = binary.LittleEndian.Uint64(buf[:8])
-	}
-
-	// Field: ShLink at int64(addr)+40
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+40); err != nil {
-		errs.Add("Elf64Shdr.ShLink", uintptr(int64(addr)+40), err)
-	} else {
-		result.ShLink = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: ShInfo at int64(addr)+44
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+44); err != nil {
-		errs.Add("Elf64Shdr.ShInfo", uintptr(int64(addr)+44), err)
-	} else {
-		result.ShInfo = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: ShAddralign at int64(addr)+48
-	if _, err := ctx.ReadAt(buf[:8], int64(addr)+48); err != nil {
-		errs.Add("Elf64Shdr.ShAddralign", uintptr(int64(addr)+48), err)
-	} else {
-		result.ShAddralign = binary.LittleEndian.Uint64(buf[:8])
-	}
-
-	// Field: ShEntsize at int64(addr)+56
-	if _, err := ctx.ReadAt(buf[:8], int64(addr)+56); err != nil {
-		errs.Add("Elf64Shdr.ShEntsize", uintptr(int64(addr)+56), err)
-	} else {
-		result.ShEntsize = binary.LittleEndian.Uint64(buf[:8])
 	}
 
 	return result, errs
@@ -2089,178 +1957,6 @@ func ReadElf64Ehdr(ctx *runtime.ReadContext, addr uintptr) (*Elf64Ehdr, runtime.
 		errs.Add("Elf64Ehdr.EShstrndx", uintptr(int64(addr)+46), err)
 	} else {
 		result.EShstrndx = binary.LittleEndian.Uint16(buf[:2])
-	}
-
-	return result, errs
-}
-
-func ReadElf32Rel(ctx *runtime.ReadContext, addr uintptr) (*Elf32Rel, runtime.Errors) {
-	var errs runtime.Errors
-	result := &Elf32Rel{}
-	var buf [4]byte
-
-	// Field: ROffset at int64(addr)+0
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+0); err != nil {
-		errs.Add("Elf32Rel.ROffset", uintptr(int64(addr)+0), err)
-	} else {
-		result.ROffset = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: RInfo at int64(addr)+4
-	{
-		child, childErrs := ReadELF32RINFO(ctx, uintptr(int64(addr)+4))
-		if child != nil {
-			result.RInfo = *child
-		}
-		errs = append(errs, childErrs...)
-	}
-
-	return result, errs
-}
-
-func ReadString(ctx *runtime.ReadContext, addr uintptr) (*String, runtime.Errors) {
-	var errs runtime.Errors
-	result := &String{}
-	var buf [1]byte
-
-	// Field: Value at int64(addr)+0
-	if _, err := ctx.ReadAt(buf[:1], int64(addr)+0); err != nil {
-		errs.Add("String.Value", uintptr(int64(addr)+0), err)
-	} else {
-		result.Value = buf[0]
-	}
-
-	return result, errs
-}
-
-func ReadElf32Shdr(ctx *runtime.ReadContext, addr uintptr) (*Elf32Shdr, runtime.Errors) {
-	var errs runtime.Errors
-	result := &Elf32Shdr{}
-	var buf [4]byte
-
-	// Field: ShName at int64(addr)+0
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+0); err != nil {
-		errs.Add("Elf32Shdr.ShName", uintptr(int64(addr)+0), err)
-	} else {
-		result.ShName = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: ShType (enum) at int64(addr)+4
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+4); err != nil {
-		errs.Add("Elf32Shdr.ShType", uintptr(int64(addr)+4), err)
-	} else {
-		result.ShType = SHT(binary.LittleEndian.Uint32(buf[:4]))
-	}
-
-	// Field: ShFlags at int64(addr)+8
-	{
-		child, childErrs := ReadSHF(ctx, uintptr(int64(addr)+8))
-		if child != nil {
-			result.ShFlags = *child
-		}
-		errs = append(errs, childErrs...)
-	}
-
-	// Field: ShAddr at int64(addr)+12
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+12); err != nil {
-		errs.Add("Elf32Shdr.ShAddr", uintptr(int64(addr)+12), err)
-	} else {
-		result.ShAddr = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: ShOffset at int64(addr)+16
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+16); err != nil {
-		errs.Add("Elf32Shdr.ShOffset", uintptr(int64(addr)+16), err)
-	} else {
-		result.ShOffset = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: ShSize at int64(addr)+20
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+20); err != nil {
-		errs.Add("Elf32Shdr.ShSize", uintptr(int64(addr)+20), err)
-	} else {
-		result.ShSize = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: ShLink at int64(addr)+24
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+24); err != nil {
-		errs.Add("Elf32Shdr.ShLink", uintptr(int64(addr)+24), err)
-	} else {
-		result.ShLink = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: ShInfo at int64(addr)+28
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+28); err != nil {
-		errs.Add("Elf32Shdr.ShInfo", uintptr(int64(addr)+28), err)
-	} else {
-		result.ShInfo = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: ShAddralign at int64(addr)+32
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+32); err != nil {
-		errs.Add("Elf32Shdr.ShAddralign", uintptr(int64(addr)+32), err)
-	} else {
-		result.ShAddralign = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: ShEntsize at int64(addr)+36
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+36); err != nil {
-		errs.Add("Elf32Shdr.ShEntsize", uintptr(int64(addr)+36), err)
-	} else {
-		result.ShEntsize = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	return result, errs
-}
-
-func ReadElf64Chdr(ctx *runtime.ReadContext, addr uintptr) (*Elf64Chdr, runtime.Errors) {
-	var errs runtime.Errors
-	result := &Elf64Chdr{}
-	var buf [4]byte
-
-	// Field: ChType at int64(addr)+0
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+0); err != nil {
-		errs.Add("Elf64Chdr.ChType", uintptr(int64(addr)+0), err)
-	} else {
-		result.ChType = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: ChSize at int64(addr)+4
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+4); err != nil {
-		errs.Add("Elf64Chdr.ChSize", uintptr(int64(addr)+4), err)
-	} else {
-		result.ChSize = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: ChAddralign at int64(addr)+8
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+8); err != nil {
-		errs.Add("Elf64Chdr.ChAddralign", uintptr(int64(addr)+8), err)
-	} else {
-		result.ChAddralign = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	return result, errs
-}
-
-func ReadElf64Syminfo(ctx *runtime.ReadContext, addr uintptr) (*Elf64Syminfo, runtime.Errors) {
-	var errs runtime.Errors
-	result := &Elf64Syminfo{}
-	var buf [2]byte
-
-	// Field: SiBoundto at int64(addr)+0
-	if _, err := ctx.ReadAt(buf[:2], int64(addr)+0); err != nil {
-		errs.Add("Elf64Syminfo.SiBoundto", uintptr(int64(addr)+0), err)
-	} else {
-		result.SiBoundto = binary.LittleEndian.Uint16(buf[:2])
-	}
-
-	// Field: SiFlags at int64(addr)+2
-	{
-		child, childErrs := ReadSYMINFOFLG(ctx, uintptr(int64(addr)+2))
-		if child != nil {
-			result.SiFlags = *child
-		}
-		errs = append(errs, childErrs...)
 	}
 
 	return result, errs
@@ -2398,6 +2094,80 @@ func ReadElf64Phdr(ctx *runtime.ReadContext, addr uintptr) (*Elf64Phdr, runtime.
 	return result, errs
 }
 
+func ReadString(ctx *runtime.ReadContext, addr uintptr) (*String, runtime.Errors) {
+	var errs runtime.Errors
+	result := &String{}
+	var buf [1]byte
+
+	// Field: Value at int64(addr)+0
+	if _, err := ctx.ReadAt(buf[:1], int64(addr)+0); err != nil {
+		errs.Add("String.Value", uintptr(int64(addr)+0), err)
+	} else {
+		result.Value = buf[0]
+	}
+
+	return result, errs
+}
+
+func ReadEIDENT(ctx *runtime.ReadContext, addr uintptr) (*EIDENT, runtime.Errors) {
+	var errs runtime.Errors
+	result := &EIDENT{}
+	var buf [1]byte
+
+	// Field: EICLASS (enum) at int64(addr)+4
+	if _, err := ctx.ReadAt(buf[:1], int64(addr)+4); err != nil {
+		errs.Add("EIDENT.EICLASS", uintptr(int64(addr)+4), err)
+	} else {
+		result.EICLASS = EICLASS(buf[0])
+	}
+
+	// Field: EIDATA (enum) at int64(addr)+5
+	if _, err := ctx.ReadAt(buf[:1], int64(addr)+5); err != nil {
+		errs.Add("EIDENT.EIDATA", uintptr(int64(addr)+5), err)
+	} else {
+		result.EIDATA = EIDATA(buf[0])
+	}
+
+	// Field: EIVERSION (enum) at int64(addr)+6
+	if _, err := ctx.ReadAt(buf[:1], int64(addr)+6); err != nil {
+		errs.Add("EIDENT.EIVERSION", uintptr(int64(addr)+6), err)
+	} else {
+		result.EIVERSION = EIVERSION(buf[0])
+	}
+
+	// Field: EIOSABI (enum) at int64(addr)+7
+	if _, err := ctx.ReadAt(buf[:1], int64(addr)+7); err != nil {
+		errs.Add("EIDENT.EIOSABI", uintptr(int64(addr)+7), err)
+	} else {
+		result.EIOSABI = EIOSABI(buf[0])
+	}
+
+	// Field: EIABIVERSION at int64(addr)+8
+	if _, err := ctx.ReadAt(buf[:1], int64(addr)+8); err != nil {
+		errs.Add("EIDENT.EIABIVERSION", uintptr(int64(addr)+8), err)
+	} else {
+		result.EIABIVERSION = buf[0]
+	}
+
+	return result, errs
+}
+
+func ReadELF(ctx *runtime.ReadContext, addr uintptr) (*ELF, runtime.Errors) {
+	var errs runtime.Errors
+	result := &ELF{}
+
+	// Field: EIdent at int64(addr)+0
+	{
+		child, childErrs := ReadEIDENT(ctx, uintptr(int64(addr)+0))
+		if child != nil {
+			result.EIdent = *child
+		}
+		errs = append(errs, childErrs...)
+	}
+
+	return result, errs
+}
+
 func ReadElf32Chdr(ctx *runtime.ReadContext, addr uintptr) (*Elf32Chdr, runtime.Errors) {
 	var errs runtime.Errors
 	result := &Elf32Chdr{}
@@ -2427,45 +2197,170 @@ func ReadElf32Chdr(ctx *runtime.ReadContext, addr uintptr) (*Elf32Chdr, runtime.
 	return result, errs
 }
 
-func ReadElf32Rela(ctx *runtime.ReadContext, addr uintptr) (*Elf32Rela, runtime.Errors) {
+func ReadElf32Sym(ctx *runtime.ReadContext, addr uintptr) (*Elf32Sym, runtime.Errors) {
 	var errs runtime.Errors
-	result := &Elf32Rela{}
+	result := &Elf32Sym{}
 	var buf [4]byte
 
-	// Field: ROffset at int64(addr)+0
+	// Field: StName at int64(addr)+0
 	if _, err := ctx.ReadAt(buf[:4], int64(addr)+0); err != nil {
-		errs.Add("Elf32Rela.ROffset", uintptr(int64(addr)+0), err)
+		errs.Add("Elf32Sym.StName", uintptr(int64(addr)+0), err)
 	} else {
-		result.ROffset = binary.LittleEndian.Uint32(buf[:4])
+		result.StName = binary.LittleEndian.Uint32(buf[:4])
 	}
 
-	// Field: RInfo at int64(addr)+4
+	// Field: StValue at int64(addr)+4
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+4); err != nil {
+		errs.Add("Elf32Sym.StValue", uintptr(int64(addr)+4), err)
+	} else {
+		result.StValue = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: StSize at int64(addr)+8
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+8); err != nil {
+		errs.Add("Elf32Sym.StSize", uintptr(int64(addr)+8), err)
+	} else {
+		result.StSize = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: StInfo at int64(addr)+12
 	{
-		child, childErrs := ReadELF32RINFO(ctx, uintptr(int64(addr)+4))
+		child, childErrs := ReadST(ctx, uintptr(int64(addr)+12))
 		if child != nil {
-			result.RInfo = *child
+			result.StInfo = *child
 		}
 		errs = append(errs, childErrs...)
 	}
 
-	// Field: RAddend at int64(addr)+8
-	if _, err := ctx.ReadAt(buf[:4], int64(addr)+8); err != nil {
-		errs.Add("Elf32Rela.RAddend", uintptr(int64(addr)+8), err)
+	// Field: StOther (enum) at int64(addr)+13
+	if _, err := ctx.ReadAt(buf[:1], int64(addr)+13); err != nil {
+		errs.Add("Elf32Sym.StOther", uintptr(int64(addr)+13), err)
 	} else {
-		result.RAddend = int32(binary.LittleEndian.Uint32(buf[:4]))
+		result.StOther = STV(buf[0])
+	}
+
+	// Field: StShndx at int64(addr)+14
+	if _, err := ctx.ReadAt(buf[:2], int64(addr)+14); err != nil {
+		errs.Add("Elf32Sym.StShndx", uintptr(int64(addr)+14), err)
+	} else {
+		result.StShndx = binary.LittleEndian.Uint16(buf[:2])
 	}
 
 	return result, errs
 }
 
-func ReadElf64Rela(ctx *runtime.ReadContext, addr uintptr) (*Elf64Rela, runtime.Errors) {
+func ReadElf32Syminfo(ctx *runtime.ReadContext, addr uintptr) (*Elf32Syminfo, runtime.Errors) {
 	var errs runtime.Errors
-	result := &Elf64Rela{}
+	result := &Elf32Syminfo{}
+	var buf [2]byte
+
+	// Field: SiBoundto at int64(addr)+0
+	if _, err := ctx.ReadAt(buf[:2], int64(addr)+0); err != nil {
+		errs.Add("Elf32Syminfo.SiBoundto", uintptr(int64(addr)+0), err)
+	} else {
+		result.SiBoundto = binary.LittleEndian.Uint16(buf[:2])
+	}
+
+	// Field: SiFlags at int64(addr)+2
+	{
+		child, childErrs := ReadSYMINFOFLG(ctx, uintptr(int64(addr)+2))
+		if child != nil {
+			result.SiFlags = *child
+		}
+		errs = append(errs, childErrs...)
+	}
+
+	return result, errs
+}
+
+func ReadElf32Shdr(ctx *runtime.ReadContext, addr uintptr) (*Elf32Shdr, runtime.Errors) {
+	var errs runtime.Errors
+	result := &Elf32Shdr{}
+	var buf [4]byte
+
+	// Field: ShName at int64(addr)+0
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+0); err != nil {
+		errs.Add("Elf32Shdr.ShName", uintptr(int64(addr)+0), err)
+	} else {
+		result.ShName = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: ShType (enum) at int64(addr)+4
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+4); err != nil {
+		errs.Add("Elf32Shdr.ShType", uintptr(int64(addr)+4), err)
+	} else {
+		result.ShType = SHT(binary.LittleEndian.Uint32(buf[:4]))
+	}
+
+	// Field: ShFlags at int64(addr)+8
+	{
+		child, childErrs := ReadSHF(ctx, uintptr(int64(addr)+8))
+		if child != nil {
+			result.ShFlags = *child
+		}
+		errs = append(errs, childErrs...)
+	}
+
+	// Field: ShAddr at int64(addr)+12
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+12); err != nil {
+		errs.Add("Elf32Shdr.ShAddr", uintptr(int64(addr)+12), err)
+	} else {
+		result.ShAddr = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: ShOffset at int64(addr)+16
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+16); err != nil {
+		errs.Add("Elf32Shdr.ShOffset", uintptr(int64(addr)+16), err)
+	} else {
+		result.ShOffset = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: ShSize at int64(addr)+20
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+20); err != nil {
+		errs.Add("Elf32Shdr.ShSize", uintptr(int64(addr)+20), err)
+	} else {
+		result.ShSize = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: ShLink at int64(addr)+24
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+24); err != nil {
+		errs.Add("Elf32Shdr.ShLink", uintptr(int64(addr)+24), err)
+	} else {
+		result.ShLink = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: ShInfo at int64(addr)+28
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+28); err != nil {
+		errs.Add("Elf32Shdr.ShInfo", uintptr(int64(addr)+28), err)
+	} else {
+		result.ShInfo = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: ShAddralign at int64(addr)+32
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+32); err != nil {
+		errs.Add("Elf32Shdr.ShAddralign", uintptr(int64(addr)+32), err)
+	} else {
+		result.ShAddralign = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: ShEntsize at int64(addr)+36
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+36); err != nil {
+		errs.Add("Elf32Shdr.ShEntsize", uintptr(int64(addr)+36), err)
+	} else {
+		result.ShEntsize = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	return result, errs
+}
+
+func ReadElf64Rel(ctx *runtime.ReadContext, addr uintptr) (*Elf64Rel, runtime.Errors) {
+	var errs runtime.Errors
+	result := &Elf64Rel{}
 	var buf [8]byte
 
 	// Field: ROffset at int64(addr)+0
 	if _, err := ctx.ReadAt(buf[:8], int64(addr)+0); err != nil {
-		errs.Add("Elf64Rela.ROffset", uintptr(int64(addr)+0), err)
+		errs.Add("Elf64Rel.ROffset", uintptr(int64(addr)+0), err)
 	} else {
 		result.ROffset = binary.LittleEndian.Uint64(buf[:8])
 	}
@@ -2477,13 +2372,6 @@ func ReadElf64Rela(ctx *runtime.ReadContext, addr uintptr) (*Elf64Rela, runtime.
 			result.RInfo = *child
 		}
 		errs = append(errs, childErrs...)
-	}
-
-	// Field: RAddend at int64(addr)+16
-	if _, err := ctx.ReadAt(buf[:8], int64(addr)+16); err != nil {
-		errs.Add("Elf64Rela.RAddend", uintptr(int64(addr)+16), err)
-	} else {
-		result.RAddend = int64(binary.LittleEndian.Uint64(buf[:8]))
 	}
 
 	return result, errs
@@ -2536,6 +2424,141 @@ func ReadElf64Sym(ctx *runtime.ReadContext, addr uintptr) (*Elf64Sym, runtime.Er
 		errs.Add("Elf64Sym.StSize", uintptr(int64(addr)+16), err)
 	} else {
 		result.StSize = binary.LittleEndian.Uint64(buf[:8])
+	}
+
+	return result, errs
+}
+
+func ReadElf64Shdr(ctx *runtime.ReadContext, addr uintptr) (*Elf64Shdr, runtime.Errors) {
+	var errs runtime.Errors
+	result := &Elf64Shdr{}
+	var buf [8]byte
+
+	// Field: ShName at int64(addr)+0
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+0); err != nil {
+		errs.Add("Elf64Shdr.ShName", uintptr(int64(addr)+0), err)
+	} else {
+		result.ShName = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: ShType (enum) at int64(addr)+4
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+4); err != nil {
+		errs.Add("Elf64Shdr.ShType", uintptr(int64(addr)+4), err)
+	} else {
+		result.ShType = SHT(binary.LittleEndian.Uint32(buf[:4]))
+	}
+
+	// Field: ShFlags at int64(addr)+8
+	{
+		child, childErrs := ReadSHF(ctx, uintptr(int64(addr)+8))
+		if child != nil {
+			result.ShFlags = *child
+		}
+		errs = append(errs, childErrs...)
+	}
+
+	// Field: ShAddr at int64(addr)+16
+	if _, err := ctx.ReadAt(buf[:8], int64(addr)+16); err != nil {
+		errs.Add("Elf64Shdr.ShAddr", uintptr(int64(addr)+16), err)
+	} else {
+		result.ShAddr = binary.LittleEndian.Uint64(buf[:8])
+	}
+
+	// Field: ShOffset at int64(addr)+24
+	if _, err := ctx.ReadAt(buf[:8], int64(addr)+24); err != nil {
+		errs.Add("Elf64Shdr.ShOffset", uintptr(int64(addr)+24), err)
+	} else {
+		result.ShOffset = binary.LittleEndian.Uint64(buf[:8])
+	}
+
+	// Field: ShSize at int64(addr)+32
+	if _, err := ctx.ReadAt(buf[:8], int64(addr)+32); err != nil {
+		errs.Add("Elf64Shdr.ShSize", uintptr(int64(addr)+32), err)
+	} else {
+		result.ShSize = binary.LittleEndian.Uint64(buf[:8])
+	}
+
+	// Field: ShLink at int64(addr)+40
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+40); err != nil {
+		errs.Add("Elf64Shdr.ShLink", uintptr(int64(addr)+40), err)
+	} else {
+		result.ShLink = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: ShInfo at int64(addr)+44
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+44); err != nil {
+		errs.Add("Elf64Shdr.ShInfo", uintptr(int64(addr)+44), err)
+	} else {
+		result.ShInfo = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: ShAddralign at int64(addr)+48
+	if _, err := ctx.ReadAt(buf[:8], int64(addr)+48); err != nil {
+		errs.Add("Elf64Shdr.ShAddralign", uintptr(int64(addr)+48), err)
+	} else {
+		result.ShAddralign = binary.LittleEndian.Uint64(buf[:8])
+	}
+
+	// Field: ShEntsize at int64(addr)+56
+	if _, err := ctx.ReadAt(buf[:8], int64(addr)+56); err != nil {
+		errs.Add("Elf64Shdr.ShEntsize", uintptr(int64(addr)+56), err)
+	} else {
+		result.ShEntsize = binary.LittleEndian.Uint64(buf[:8])
+	}
+
+	return result, errs
+}
+
+func ReadElf32Rel(ctx *runtime.ReadContext, addr uintptr) (*Elf32Rel, runtime.Errors) {
+	var errs runtime.Errors
+	result := &Elf32Rel{}
+	var buf [4]byte
+
+	// Field: ROffset at int64(addr)+0
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+0); err != nil {
+		errs.Add("Elf32Rel.ROffset", uintptr(int64(addr)+0), err)
+	} else {
+		result.ROffset = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: RInfo at int64(addr)+4
+	{
+		child, childErrs := ReadELF32RINFO(ctx, uintptr(int64(addr)+4))
+		if child != nil {
+			result.RInfo = *child
+		}
+		errs = append(errs, childErrs...)
+	}
+
+	return result, errs
+}
+
+func ReadElf32Rela(ctx *runtime.ReadContext, addr uintptr) (*Elf32Rela, runtime.Errors) {
+	var errs runtime.Errors
+	result := &Elf32Rela{}
+	var buf [4]byte
+
+	// Field: ROffset at int64(addr)+0
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+0); err != nil {
+		errs.Add("Elf32Rela.ROffset", uintptr(int64(addr)+0), err)
+	} else {
+		result.ROffset = binary.LittleEndian.Uint32(buf[:4])
+	}
+
+	// Field: RInfo at int64(addr)+4
+	{
+		child, childErrs := ReadELF32RINFO(ctx, uintptr(int64(addr)+4))
+		if child != nil {
+			result.RInfo = *child
+		}
+		errs = append(errs, childErrs...)
+	}
+
+	// Field: RAddend at int64(addr)+8
+	if _, err := ctx.ReadAt(buf[:4], int64(addr)+8); err != nil {
+		errs.Add("Elf32Rela.RAddend", uintptr(int64(addr)+8), err)
+	} else {
+		result.RAddend = int32(binary.LittleEndian.Uint32(buf[:4]))
 	}
 
 	return result, errs
@@ -2640,53 +2663,30 @@ func ReadElf32Ehdr(ctx *runtime.ReadContext, addr uintptr) (*Elf32Ehdr, runtime.
 	return result, errs
 }
 
-func ReadElf32Sym(ctx *runtime.ReadContext, addr uintptr) (*Elf32Sym, runtime.Errors) {
+func ReadElf64Chdr(ctx *runtime.ReadContext, addr uintptr) (*Elf64Chdr, runtime.Errors) {
 	var errs runtime.Errors
-	result := &Elf32Sym{}
+	result := &Elf64Chdr{}
 	var buf [4]byte
 
-	// Field: StName at int64(addr)+0
+	// Field: ChType at int64(addr)+0
 	if _, err := ctx.ReadAt(buf[:4], int64(addr)+0); err != nil {
-		errs.Add("Elf32Sym.StName", uintptr(int64(addr)+0), err)
+		errs.Add("Elf64Chdr.ChType", uintptr(int64(addr)+0), err)
 	} else {
-		result.StName = binary.LittleEndian.Uint32(buf[:4])
+		result.ChType = binary.LittleEndian.Uint32(buf[:4])
 	}
 
-	// Field: StValue at int64(addr)+4
+	// Field: ChSize at int64(addr)+4
 	if _, err := ctx.ReadAt(buf[:4], int64(addr)+4); err != nil {
-		errs.Add("Elf32Sym.StValue", uintptr(int64(addr)+4), err)
+		errs.Add("Elf64Chdr.ChSize", uintptr(int64(addr)+4), err)
 	} else {
-		result.StValue = binary.LittleEndian.Uint32(buf[:4])
+		result.ChSize = binary.LittleEndian.Uint32(buf[:4])
 	}
 
-	// Field: StSize at int64(addr)+8
+	// Field: ChAddralign at int64(addr)+8
 	if _, err := ctx.ReadAt(buf[:4], int64(addr)+8); err != nil {
-		errs.Add("Elf32Sym.StSize", uintptr(int64(addr)+8), err)
+		errs.Add("Elf64Chdr.ChAddralign", uintptr(int64(addr)+8), err)
 	} else {
-		result.StSize = binary.LittleEndian.Uint32(buf[:4])
-	}
-
-	// Field: StInfo at int64(addr)+12
-	{
-		child, childErrs := ReadST(ctx, uintptr(int64(addr)+12))
-		if child != nil {
-			result.StInfo = *child
-		}
-		errs = append(errs, childErrs...)
-	}
-
-	// Field: StOther (enum) at int64(addr)+13
-	if _, err := ctx.ReadAt(buf[:1], int64(addr)+13); err != nil {
-		errs.Add("Elf32Sym.StOther", uintptr(int64(addr)+13), err)
-	} else {
-		result.StOther = STV(buf[0])
-	}
-
-	// Field: StShndx at int64(addr)+14
-	if _, err := ctx.ReadAt(buf[:2], int64(addr)+14); err != nil {
-		errs.Add("Elf32Sym.StShndx", uintptr(int64(addr)+14), err)
-	} else {
-		result.StShndx = binary.LittleEndian.Uint16(buf[:2])
+		result.ChAddralign = binary.LittleEndian.Uint32(buf[:4])
 	}
 
 	return result, errs
@@ -2794,28 +2794,28 @@ func (r *PFReader) Addr() uintptr {
 	return r.addr
 }
 
-// Elf64RelReader provides lazy, field-level access to Elf64Rel without reading the entire struct.
-type Elf64RelReader struct {
+// Elf64RelaReader provides lazy, field-level access to Elf64Rela without reading the entire struct.
+type Elf64RelaReader struct {
 	ctx  *runtime.ReadContext
 	addr uintptr
 }
 
-// NewElf64RelReader creates a lazy reader for Elf64Rel at the given address.
-func NewElf64RelReader(ctx *runtime.ReadContext, addr uintptr) *Elf64RelReader {
-	return &Elf64RelReader{ctx: ctx, addr: addr}
+// NewElf64RelaReader creates a lazy reader for Elf64Rela at the given address.
+func NewElf64RelaReader(ctx *runtime.ReadContext, addr uintptr) *Elf64RelaReader {
+	return &Elf64RelaReader{ctx: ctx, addr: addr}
 }
 
-// Addr returns the base address of this Elf64Rel.
-func (r *Elf64RelReader) Addr() uintptr {
+// Addr returns the base address of this Elf64Rela.
+func (r *Elf64RelaReader) Addr() uintptr {
 	return r.addr
 }
 
-// Read materializes the full Elf64Rel struct eagerly.
-func (r *Elf64RelReader) Read() (*Elf64Rel, runtime.Errors) {
-	return ReadElf64Rel(r.ctx, r.addr)
+// Read materializes the full Elf64Rela struct eagerly.
+func (r *Elf64RelaReader) Read() (*Elf64Rela, runtime.Errors) {
+	return ReadElf64Rela(r.ctx, r.addr)
 }
 
-func (r *Elf64RelReader) ROffset() (uint64, error) {
+func (r *Elf64RelaReader) ROffset() (uint64, error) {
 	var buf [8]byte
 	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+0); err != nil {
 		return 0, err
@@ -2824,119 +2824,40 @@ func (r *Elf64RelReader) ROffset() (uint64, error) {
 }
 
 // RInfo returns a lazy reader for the nested ELF64RINFO (zero I/O).
-func (r *Elf64RelReader) RInfo() *ELF64RINFOReader {
+func (r *Elf64RelaReader) RInfo() *ELF64RINFOReader {
 	return NewELF64RINFOReader(r.ctx, uintptr(int64(r.addr)+8))
 }
 
-// EIDENTReader provides lazy, field-level access to EIDENT without reading the entire struct.
-type EIDENTReader struct {
+func (r *Elf64RelaReader) RAddend() (int64, error) {
+	var buf [8]byte
+	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+16); err != nil {
+		return 0, err
+	}
+	return int64(binary.LittleEndian.Uint64(buf[:8])), nil
+}
+
+// Elf64SyminfoReader provides lazy, field-level access to Elf64Syminfo without reading the entire struct.
+type Elf64SyminfoReader struct {
 	ctx  *runtime.ReadContext
 	addr uintptr
 }
 
-// NewEIDENTReader creates a lazy reader for EIDENT at the given address.
-func NewEIDENTReader(ctx *runtime.ReadContext, addr uintptr) *EIDENTReader {
-	return &EIDENTReader{ctx: ctx, addr: addr}
+// NewElf64SyminfoReader creates a lazy reader for Elf64Syminfo at the given address.
+func NewElf64SyminfoReader(ctx *runtime.ReadContext, addr uintptr) *Elf64SyminfoReader {
+	return &Elf64SyminfoReader{ctx: ctx, addr: addr}
 }
 
-// Addr returns the base address of this EIDENT.
-func (r *EIDENTReader) Addr() uintptr {
+// Addr returns the base address of this Elf64Syminfo.
+func (r *Elf64SyminfoReader) Addr() uintptr {
 	return r.addr
 }
 
-// Read materializes the full EIDENT struct eagerly.
-func (r *EIDENTReader) Read() (*EIDENT, runtime.Errors) {
-	return ReadEIDENT(r.ctx, r.addr)
+// Read materializes the full Elf64Syminfo struct eagerly.
+func (r *Elf64SyminfoReader) Read() (*Elf64Syminfo, runtime.Errors) {
+	return ReadElf64Syminfo(r.ctx, r.addr)
 }
 
-func (r *EIDENTReader) EICLASS() (EICLASS, error) {
-	var buf [1]byte
-	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+4); err != nil {
-		return 0, err
-	}
-	return EICLASS(buf[0]), nil
-}
-
-func (r *EIDENTReader) EIDATA() (EIDATA, error) {
-	var buf [1]byte
-	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+5); err != nil {
-		return 0, err
-	}
-	return EIDATA(buf[0]), nil
-}
-
-func (r *EIDENTReader) EIVERSION() (EIVERSION, error) {
-	var buf [1]byte
-	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+6); err != nil {
-		return 0, err
-	}
-	return EIVERSION(buf[0]), nil
-}
-
-func (r *EIDENTReader) EIOSABI() (EIOSABI, error) {
-	var buf [1]byte
-	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+7); err != nil {
-		return 0, err
-	}
-	return EIOSABI(buf[0]), nil
-}
-
-func (r *EIDENTReader) EIABIVERSION() (uint8, error) {
-	var buf [1]byte
-	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+8); err != nil {
-		return 0, err
-	}
-	return buf[0], nil
-}
-
-// ELFReader provides lazy, field-level access to ELF without reading the entire struct.
-type ELFReader struct {
-	ctx  *runtime.ReadContext
-	addr uintptr
-}
-
-// NewELFReader creates a lazy reader for ELF at the given address.
-func NewELFReader(ctx *runtime.ReadContext, addr uintptr) *ELFReader {
-	return &ELFReader{ctx: ctx, addr: addr}
-}
-
-// Addr returns the base address of this ELF.
-func (r *ELFReader) Addr() uintptr {
-	return r.addr
-}
-
-// Read materializes the full ELF struct eagerly.
-func (r *ELFReader) Read() (*ELF, runtime.Errors) {
-	return ReadELF(r.ctx, r.addr)
-}
-
-// EIdent returns a lazy reader for the nested EIDENT (zero I/O).
-func (r *ELFReader) EIdent() *EIDENTReader {
-	return NewEIDENTReader(r.ctx, uintptr(int64(r.addr)+0))
-}
-
-// Elf32SyminfoReader provides lazy, field-level access to Elf32Syminfo without reading the entire struct.
-type Elf32SyminfoReader struct {
-	ctx  *runtime.ReadContext
-	addr uintptr
-}
-
-// NewElf32SyminfoReader creates a lazy reader for Elf32Syminfo at the given address.
-func NewElf32SyminfoReader(ctx *runtime.ReadContext, addr uintptr) *Elf32SyminfoReader {
-	return &Elf32SyminfoReader{ctx: ctx, addr: addr}
-}
-
-// Addr returns the base address of this Elf32Syminfo.
-func (r *Elf32SyminfoReader) Addr() uintptr {
-	return r.addr
-}
-
-// Read materializes the full Elf32Syminfo struct eagerly.
-func (r *Elf32SyminfoReader) Read() (*Elf32Syminfo, runtime.Errors) {
-	return ReadElf32Syminfo(r.ctx, r.addr)
-}
-
-func (r *Elf32SyminfoReader) SiBoundto() (uint16, error) {
+func (r *Elf64SyminfoReader) SiBoundto() (uint16, error) {
 	var buf [2]byte
 	if _, err := r.ctx.ReadAt(buf[:2], int64(r.addr)+0); err != nil {
 		return 0, err
@@ -2945,106 +2866,8 @@ func (r *Elf32SyminfoReader) SiBoundto() (uint16, error) {
 }
 
 // SiFlags returns a lazy reader for the nested SYMINFOFLG (zero I/O).
-func (r *Elf32SyminfoReader) SiFlags() *SYMINFOFLGReader {
+func (r *Elf64SyminfoReader) SiFlags() *SYMINFOFLGReader {
 	return NewSYMINFOFLGReader(r.ctx, uintptr(int64(r.addr)+2))
-}
-
-// Elf64ShdrReader provides lazy, field-level access to Elf64Shdr without reading the entire struct.
-type Elf64ShdrReader struct {
-	ctx  *runtime.ReadContext
-	addr uintptr
-}
-
-// NewElf64ShdrReader creates a lazy reader for Elf64Shdr at the given address.
-func NewElf64ShdrReader(ctx *runtime.ReadContext, addr uintptr) *Elf64ShdrReader {
-	return &Elf64ShdrReader{ctx: ctx, addr: addr}
-}
-
-// Addr returns the base address of this Elf64Shdr.
-func (r *Elf64ShdrReader) Addr() uintptr {
-	return r.addr
-}
-
-// Read materializes the full Elf64Shdr struct eagerly.
-func (r *Elf64ShdrReader) Read() (*Elf64Shdr, runtime.Errors) {
-	return ReadElf64Shdr(r.ctx, r.addr)
-}
-
-func (r *Elf64ShdrReader) ShName() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+0); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-func (r *Elf64ShdrReader) ShType() (SHT, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+4); err != nil {
-		return 0, err
-	}
-	return SHT(binary.LittleEndian.Uint32(buf[:4])), nil
-}
-
-// ShFlags returns a lazy reader for the nested SHF (zero I/O).
-func (r *Elf64ShdrReader) ShFlags() *SHFReader {
-	return NewSHFReader(r.ctx, uintptr(int64(r.addr)+8))
-}
-
-func (r *Elf64ShdrReader) ShAddr() (uint64, error) {
-	var buf [8]byte
-	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+16); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint64(buf[:8]), nil
-}
-
-func (r *Elf64ShdrReader) ShOffset() (uint64, error) {
-	var buf [8]byte
-	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+24); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint64(buf[:8]), nil
-}
-
-func (r *Elf64ShdrReader) ShSize() (uint64, error) {
-	var buf [8]byte
-	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+32); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint64(buf[:8]), nil
-}
-
-func (r *Elf64ShdrReader) ShLink() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+40); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-func (r *Elf64ShdrReader) ShInfo() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+44); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-func (r *Elf64ShdrReader) ShAddralign() (uint64, error) {
-	var buf [8]byte
-	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+48); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint64(buf[:8]), nil
-}
-
-func (r *Elf64ShdrReader) ShEntsize() (uint64, error) {
-	var buf [8]byte
-	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+56); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint64(buf[:8]), nil
 }
 
 // Elf64EhdrReader provides lazy, field-level access to Elf64Ehdr without reading the entire struct.
@@ -3170,246 +2993,6 @@ func (r *Elf64EhdrReader) EShstrndx() (uint16, error) {
 		return 0, err
 	}
 	return binary.LittleEndian.Uint16(buf[:2]), nil
-}
-
-// Elf32RelReader provides lazy, field-level access to Elf32Rel without reading the entire struct.
-type Elf32RelReader struct {
-	ctx  *runtime.ReadContext
-	addr uintptr
-}
-
-// NewElf32RelReader creates a lazy reader for Elf32Rel at the given address.
-func NewElf32RelReader(ctx *runtime.ReadContext, addr uintptr) *Elf32RelReader {
-	return &Elf32RelReader{ctx: ctx, addr: addr}
-}
-
-// Addr returns the base address of this Elf32Rel.
-func (r *Elf32RelReader) Addr() uintptr {
-	return r.addr
-}
-
-// Read materializes the full Elf32Rel struct eagerly.
-func (r *Elf32RelReader) Read() (*Elf32Rel, runtime.Errors) {
-	return ReadElf32Rel(r.ctx, r.addr)
-}
-
-func (r *Elf32RelReader) ROffset() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+0); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-// RInfo returns a lazy reader for the nested ELF32RINFO (zero I/O).
-func (r *Elf32RelReader) RInfo() *ELF32RINFOReader {
-	return NewELF32RINFOReader(r.ctx, uintptr(int64(r.addr)+4))
-}
-
-// StringReader provides lazy, field-level access to String without reading the entire struct.
-type StringReader struct {
-	ctx  *runtime.ReadContext
-	addr uintptr
-}
-
-// NewStringReader creates a lazy reader for String at the given address.
-func NewStringReader(ctx *runtime.ReadContext, addr uintptr) *StringReader {
-	return &StringReader{ctx: ctx, addr: addr}
-}
-
-// Addr returns the base address of this String.
-func (r *StringReader) Addr() uintptr {
-	return r.addr
-}
-
-// Read materializes the full String struct eagerly.
-func (r *StringReader) Read() (*String, runtime.Errors) {
-	return ReadString(r.ctx, r.addr)
-}
-
-func (r *StringReader) Value() (byte, error) {
-	var buf [1]byte
-	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+0); err != nil {
-		return 0, err
-	}
-	return buf[0], nil
-}
-
-// Elf32ShdrReader provides lazy, field-level access to Elf32Shdr without reading the entire struct.
-type Elf32ShdrReader struct {
-	ctx  *runtime.ReadContext
-	addr uintptr
-}
-
-// NewElf32ShdrReader creates a lazy reader for Elf32Shdr at the given address.
-func NewElf32ShdrReader(ctx *runtime.ReadContext, addr uintptr) *Elf32ShdrReader {
-	return &Elf32ShdrReader{ctx: ctx, addr: addr}
-}
-
-// Addr returns the base address of this Elf32Shdr.
-func (r *Elf32ShdrReader) Addr() uintptr {
-	return r.addr
-}
-
-// Read materializes the full Elf32Shdr struct eagerly.
-func (r *Elf32ShdrReader) Read() (*Elf32Shdr, runtime.Errors) {
-	return ReadElf32Shdr(r.ctx, r.addr)
-}
-
-func (r *Elf32ShdrReader) ShName() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+0); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-func (r *Elf32ShdrReader) ShType() (SHT, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+4); err != nil {
-		return 0, err
-	}
-	return SHT(binary.LittleEndian.Uint32(buf[:4])), nil
-}
-
-// ShFlags returns a lazy reader for the nested SHF (zero I/O).
-func (r *Elf32ShdrReader) ShFlags() *SHFReader {
-	return NewSHFReader(r.ctx, uintptr(int64(r.addr)+8))
-}
-
-func (r *Elf32ShdrReader) ShAddr() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+12); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-func (r *Elf32ShdrReader) ShOffset() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+16); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-func (r *Elf32ShdrReader) ShSize() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+20); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-func (r *Elf32ShdrReader) ShLink() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+24); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-func (r *Elf32ShdrReader) ShInfo() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+28); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-func (r *Elf32ShdrReader) ShAddralign() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+32); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-func (r *Elf32ShdrReader) ShEntsize() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+36); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-// Elf64ChdrReader provides lazy, field-level access to Elf64Chdr without reading the entire struct.
-type Elf64ChdrReader struct {
-	ctx  *runtime.ReadContext
-	addr uintptr
-}
-
-// NewElf64ChdrReader creates a lazy reader for Elf64Chdr at the given address.
-func NewElf64ChdrReader(ctx *runtime.ReadContext, addr uintptr) *Elf64ChdrReader {
-	return &Elf64ChdrReader{ctx: ctx, addr: addr}
-}
-
-// Addr returns the base address of this Elf64Chdr.
-func (r *Elf64ChdrReader) Addr() uintptr {
-	return r.addr
-}
-
-// Read materializes the full Elf64Chdr struct eagerly.
-func (r *Elf64ChdrReader) Read() (*Elf64Chdr, runtime.Errors) {
-	return ReadElf64Chdr(r.ctx, r.addr)
-}
-
-func (r *Elf64ChdrReader) ChType() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+0); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-func (r *Elf64ChdrReader) ChSize() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+4); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-func (r *Elf64ChdrReader) ChAddralign() (uint32, error) {
-	var buf [4]byte
-	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+8); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-// Elf64SyminfoReader provides lazy, field-level access to Elf64Syminfo without reading the entire struct.
-type Elf64SyminfoReader struct {
-	ctx  *runtime.ReadContext
-	addr uintptr
-}
-
-// NewElf64SyminfoReader creates a lazy reader for Elf64Syminfo at the given address.
-func NewElf64SyminfoReader(ctx *runtime.ReadContext, addr uintptr) *Elf64SyminfoReader {
-	return &Elf64SyminfoReader{ctx: ctx, addr: addr}
-}
-
-// Addr returns the base address of this Elf64Syminfo.
-func (r *Elf64SyminfoReader) Addr() uintptr {
-	return r.addr
-}
-
-// Read materializes the full Elf64Syminfo struct eagerly.
-func (r *Elf64SyminfoReader) Read() (*Elf64Syminfo, runtime.Errors) {
-	return ReadElf64Syminfo(r.ctx, r.addr)
-}
-
-func (r *Elf64SyminfoReader) SiBoundto() (uint16, error) {
-	var buf [2]byte
-	if _, err := r.ctx.ReadAt(buf[:2], int64(r.addr)+0); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint16(buf[:2]), nil
-}
-
-// SiFlags returns a lazy reader for the nested SYMINFOFLG (zero I/O).
-func (r *Elf64SyminfoReader) SiFlags() *SYMINFOFLGReader {
-	return NewSYMINFOFLGReader(r.ctx, uintptr(int64(r.addr)+2))
 }
 
 // Elf32PhdrReader provides lazy, field-level access to Elf32Phdr without reading the entire struct.
@@ -3576,6 +3159,122 @@ func (r *Elf64PhdrReader) PAlign() (uint64, error) {
 	return binary.LittleEndian.Uint64(buf[:8]), nil
 }
 
+// StringReader provides lazy, field-level access to String without reading the entire struct.
+type StringReader struct {
+	ctx  *runtime.ReadContext
+	addr uintptr
+}
+
+// NewStringReader creates a lazy reader for String at the given address.
+func NewStringReader(ctx *runtime.ReadContext, addr uintptr) *StringReader {
+	return &StringReader{ctx: ctx, addr: addr}
+}
+
+// Addr returns the base address of this String.
+func (r *StringReader) Addr() uintptr {
+	return r.addr
+}
+
+// Read materializes the full String struct eagerly.
+func (r *StringReader) Read() (*String, runtime.Errors) {
+	return ReadString(r.ctx, r.addr)
+}
+
+func (r *StringReader) Value() (byte, error) {
+	var buf [1]byte
+	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+0); err != nil {
+		return 0, err
+	}
+	return buf[0], nil
+}
+
+// EIDENTReader provides lazy, field-level access to EIDENT without reading the entire struct.
+type EIDENTReader struct {
+	ctx  *runtime.ReadContext
+	addr uintptr
+}
+
+// NewEIDENTReader creates a lazy reader for EIDENT at the given address.
+func NewEIDENTReader(ctx *runtime.ReadContext, addr uintptr) *EIDENTReader {
+	return &EIDENTReader{ctx: ctx, addr: addr}
+}
+
+// Addr returns the base address of this EIDENT.
+func (r *EIDENTReader) Addr() uintptr {
+	return r.addr
+}
+
+// Read materializes the full EIDENT struct eagerly.
+func (r *EIDENTReader) Read() (*EIDENT, runtime.Errors) {
+	return ReadEIDENT(r.ctx, r.addr)
+}
+
+func (r *EIDENTReader) EICLASS() (EICLASS, error) {
+	var buf [1]byte
+	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+4); err != nil {
+		return 0, err
+	}
+	return EICLASS(buf[0]), nil
+}
+
+func (r *EIDENTReader) EIDATA() (EIDATA, error) {
+	var buf [1]byte
+	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+5); err != nil {
+		return 0, err
+	}
+	return EIDATA(buf[0]), nil
+}
+
+func (r *EIDENTReader) EIVERSION() (EIVERSION, error) {
+	var buf [1]byte
+	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+6); err != nil {
+		return 0, err
+	}
+	return EIVERSION(buf[0]), nil
+}
+
+func (r *EIDENTReader) EIOSABI() (EIOSABI, error) {
+	var buf [1]byte
+	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+7); err != nil {
+		return 0, err
+	}
+	return EIOSABI(buf[0]), nil
+}
+
+func (r *EIDENTReader) EIABIVERSION() (uint8, error) {
+	var buf [1]byte
+	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+8); err != nil {
+		return 0, err
+	}
+	return buf[0], nil
+}
+
+// ELFReader provides lazy, field-level access to ELF without reading the entire struct.
+type ELFReader struct {
+	ctx  *runtime.ReadContext
+	addr uintptr
+}
+
+// NewELFReader creates a lazy reader for ELF at the given address.
+func NewELFReader(ctx *runtime.ReadContext, addr uintptr) *ELFReader {
+	return &ELFReader{ctx: ctx, addr: addr}
+}
+
+// Addr returns the base address of this ELF.
+func (r *ELFReader) Addr() uintptr {
+	return r.addr
+}
+
+// Read materializes the full ELF struct eagerly.
+func (r *ELFReader) Read() (*ELF, runtime.Errors) {
+	return ReadELF(r.ctx, r.addr)
+}
+
+// EIdent returns a lazy reader for the nested EIDENT (zero I/O).
+func (r *ELFReader) EIdent() *EIDENTReader {
+	return NewEIDENTReader(r.ctx, uintptr(int64(r.addr)+0))
+}
+
 // Elf32ChdrReader provides lazy, field-level access to Elf32Chdr without reading the entire struct.
 type Elf32ChdrReader struct {
 	ctx  *runtime.ReadContext
@@ -3621,28 +3320,28 @@ func (r *Elf32ChdrReader) ChAddralign() (uint32, error) {
 	return binary.LittleEndian.Uint32(buf[:4]), nil
 }
 
-// Elf32RelaReader provides lazy, field-level access to Elf32Rela without reading the entire struct.
-type Elf32RelaReader struct {
+// Elf32SymReader provides lazy, field-level access to Elf32Sym without reading the entire struct.
+type Elf32SymReader struct {
 	ctx  *runtime.ReadContext
 	addr uintptr
 }
 
-// NewElf32RelaReader creates a lazy reader for Elf32Rela at the given address.
-func NewElf32RelaReader(ctx *runtime.ReadContext, addr uintptr) *Elf32RelaReader {
-	return &Elf32RelaReader{ctx: ctx, addr: addr}
+// NewElf32SymReader creates a lazy reader for Elf32Sym at the given address.
+func NewElf32SymReader(ctx *runtime.ReadContext, addr uintptr) *Elf32SymReader {
+	return &Elf32SymReader{ctx: ctx, addr: addr}
 }
 
-// Addr returns the base address of this Elf32Rela.
-func (r *Elf32RelaReader) Addr() uintptr {
+// Addr returns the base address of this Elf32Sym.
+func (r *Elf32SymReader) Addr() uintptr {
 	return r.addr
 }
 
-// Read materializes the full Elf32Rela struct eagerly.
-func (r *Elf32RelaReader) Read() (*Elf32Rela, runtime.Errors) {
-	return ReadElf32Rela(r.ctx, r.addr)
+// Read materializes the full Elf32Sym struct eagerly.
+func (r *Elf32SymReader) Read() (*Elf32Sym, runtime.Errors) {
+	return ReadElf32Sym(r.ctx, r.addr)
 }
 
-func (r *Elf32RelaReader) ROffset() (uint32, error) {
+func (r *Elf32SymReader) StName() (uint32, error) {
 	var buf [4]byte
 	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+0); err != nil {
 		return 0, err
@@ -3650,41 +3349,197 @@ func (r *Elf32RelaReader) ROffset() (uint32, error) {
 	return binary.LittleEndian.Uint32(buf[:4]), nil
 }
 
-// RInfo returns a lazy reader for the nested ELF32RINFO (zero I/O).
-func (r *Elf32RelaReader) RInfo() *ELF32RINFOReader {
-	return NewELF32RINFOReader(r.ctx, uintptr(int64(r.addr)+4))
+func (r *Elf32SymReader) StValue() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+4); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
 }
 
-func (r *Elf32RelaReader) RAddend() (int32, error) {
+func (r *Elf32SymReader) StSize() (uint32, error) {
 	var buf [4]byte
 	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+8); err != nil {
 		return 0, err
 	}
-	return int32(binary.LittleEndian.Uint32(buf[:4])), nil
+	return binary.LittleEndian.Uint32(buf[:4]), nil
 }
 
-// Elf64RelaReader provides lazy, field-level access to Elf64Rela without reading the entire struct.
-type Elf64RelaReader struct {
+// StInfo returns a lazy reader for the nested ST (zero I/O).
+func (r *Elf32SymReader) StInfo() *STReader {
+	return NewSTReader(r.ctx, uintptr(int64(r.addr)+12))
+}
+
+func (r *Elf32SymReader) StOther() (STV, error) {
+	var buf [1]byte
+	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+13); err != nil {
+		return 0, err
+	}
+	return STV(buf[0]), nil
+}
+
+func (r *Elf32SymReader) StShndx() (uint16, error) {
+	var buf [2]byte
+	if _, err := r.ctx.ReadAt(buf[:2], int64(r.addr)+14); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint16(buf[:2]), nil
+}
+
+// Elf32SyminfoReader provides lazy, field-level access to Elf32Syminfo without reading the entire struct.
+type Elf32SyminfoReader struct {
 	ctx  *runtime.ReadContext
 	addr uintptr
 }
 
-// NewElf64RelaReader creates a lazy reader for Elf64Rela at the given address.
-func NewElf64RelaReader(ctx *runtime.ReadContext, addr uintptr) *Elf64RelaReader {
-	return &Elf64RelaReader{ctx: ctx, addr: addr}
+// NewElf32SyminfoReader creates a lazy reader for Elf32Syminfo at the given address.
+func NewElf32SyminfoReader(ctx *runtime.ReadContext, addr uintptr) *Elf32SyminfoReader {
+	return &Elf32SyminfoReader{ctx: ctx, addr: addr}
 }
 
-// Addr returns the base address of this Elf64Rela.
-func (r *Elf64RelaReader) Addr() uintptr {
+// Addr returns the base address of this Elf32Syminfo.
+func (r *Elf32SyminfoReader) Addr() uintptr {
 	return r.addr
 }
 
-// Read materializes the full Elf64Rela struct eagerly.
-func (r *Elf64RelaReader) Read() (*Elf64Rela, runtime.Errors) {
-	return ReadElf64Rela(r.ctx, r.addr)
+// Read materializes the full Elf32Syminfo struct eagerly.
+func (r *Elf32SyminfoReader) Read() (*Elf32Syminfo, runtime.Errors) {
+	return ReadElf32Syminfo(r.ctx, r.addr)
 }
 
-func (r *Elf64RelaReader) ROffset() (uint64, error) {
+func (r *Elf32SyminfoReader) SiBoundto() (uint16, error) {
+	var buf [2]byte
+	if _, err := r.ctx.ReadAt(buf[:2], int64(r.addr)+0); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint16(buf[:2]), nil
+}
+
+// SiFlags returns a lazy reader for the nested SYMINFOFLG (zero I/O).
+func (r *Elf32SyminfoReader) SiFlags() *SYMINFOFLGReader {
+	return NewSYMINFOFLGReader(r.ctx, uintptr(int64(r.addr)+2))
+}
+
+// Elf32ShdrReader provides lazy, field-level access to Elf32Shdr without reading the entire struct.
+type Elf32ShdrReader struct {
+	ctx  *runtime.ReadContext
+	addr uintptr
+}
+
+// NewElf32ShdrReader creates a lazy reader for Elf32Shdr at the given address.
+func NewElf32ShdrReader(ctx *runtime.ReadContext, addr uintptr) *Elf32ShdrReader {
+	return &Elf32ShdrReader{ctx: ctx, addr: addr}
+}
+
+// Addr returns the base address of this Elf32Shdr.
+func (r *Elf32ShdrReader) Addr() uintptr {
+	return r.addr
+}
+
+// Read materializes the full Elf32Shdr struct eagerly.
+func (r *Elf32ShdrReader) Read() (*Elf32Shdr, runtime.Errors) {
+	return ReadElf32Shdr(r.ctx, r.addr)
+}
+
+func (r *Elf32ShdrReader) ShName() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+0); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+func (r *Elf32ShdrReader) ShType() (SHT, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+4); err != nil {
+		return 0, err
+	}
+	return SHT(binary.LittleEndian.Uint32(buf[:4])), nil
+}
+
+// ShFlags returns a lazy reader for the nested SHF (zero I/O).
+func (r *Elf32ShdrReader) ShFlags() *SHFReader {
+	return NewSHFReader(r.ctx, uintptr(int64(r.addr)+8))
+}
+
+func (r *Elf32ShdrReader) ShAddr() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+12); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+func (r *Elf32ShdrReader) ShOffset() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+16); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+func (r *Elf32ShdrReader) ShSize() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+20); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+func (r *Elf32ShdrReader) ShLink() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+24); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+func (r *Elf32ShdrReader) ShInfo() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+28); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+func (r *Elf32ShdrReader) ShAddralign() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+32); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+func (r *Elf32ShdrReader) ShEntsize() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+36); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+// Elf64RelReader provides lazy, field-level access to Elf64Rel without reading the entire struct.
+type Elf64RelReader struct {
+	ctx  *runtime.ReadContext
+	addr uintptr
+}
+
+// NewElf64RelReader creates a lazy reader for Elf64Rel at the given address.
+func NewElf64RelReader(ctx *runtime.ReadContext, addr uintptr) *Elf64RelReader {
+	return &Elf64RelReader{ctx: ctx, addr: addr}
+}
+
+// Addr returns the base address of this Elf64Rel.
+func (r *Elf64RelReader) Addr() uintptr {
+	return r.addr
+}
+
+// Read materializes the full Elf64Rel struct eagerly.
+func (r *Elf64RelReader) Read() (*Elf64Rel, runtime.Errors) {
+	return ReadElf64Rel(r.ctx, r.addr)
+}
+
+func (r *Elf64RelReader) ROffset() (uint64, error) {
 	var buf [8]byte
 	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+0); err != nil {
 		return 0, err
@@ -3693,16 +3548,8 @@ func (r *Elf64RelaReader) ROffset() (uint64, error) {
 }
 
 // RInfo returns a lazy reader for the nested ELF64RINFO (zero I/O).
-func (r *Elf64RelaReader) RInfo() *ELF64RINFOReader {
+func (r *Elf64RelReader) RInfo() *ELF64RINFOReader {
 	return NewELF64RINFOReader(r.ctx, uintptr(int64(r.addr)+8))
-}
-
-func (r *Elf64RelaReader) RAddend() (int64, error) {
-	var buf [8]byte
-	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+16); err != nil {
-		return 0, err
-	}
-	return int64(binary.LittleEndian.Uint64(buf[:8])), nil
 }
 
 // Elf64SymReader provides lazy, field-level access to Elf64Sym without reading the entire struct.
@@ -3769,6 +3616,180 @@ func (r *Elf64SymReader) StSize() (uint64, error) {
 		return 0, err
 	}
 	return binary.LittleEndian.Uint64(buf[:8]), nil
+}
+
+// Elf64ShdrReader provides lazy, field-level access to Elf64Shdr without reading the entire struct.
+type Elf64ShdrReader struct {
+	ctx  *runtime.ReadContext
+	addr uintptr
+}
+
+// NewElf64ShdrReader creates a lazy reader for Elf64Shdr at the given address.
+func NewElf64ShdrReader(ctx *runtime.ReadContext, addr uintptr) *Elf64ShdrReader {
+	return &Elf64ShdrReader{ctx: ctx, addr: addr}
+}
+
+// Addr returns the base address of this Elf64Shdr.
+func (r *Elf64ShdrReader) Addr() uintptr {
+	return r.addr
+}
+
+// Read materializes the full Elf64Shdr struct eagerly.
+func (r *Elf64ShdrReader) Read() (*Elf64Shdr, runtime.Errors) {
+	return ReadElf64Shdr(r.ctx, r.addr)
+}
+
+func (r *Elf64ShdrReader) ShName() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+0); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+func (r *Elf64ShdrReader) ShType() (SHT, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+4); err != nil {
+		return 0, err
+	}
+	return SHT(binary.LittleEndian.Uint32(buf[:4])), nil
+}
+
+// ShFlags returns a lazy reader for the nested SHF (zero I/O).
+func (r *Elf64ShdrReader) ShFlags() *SHFReader {
+	return NewSHFReader(r.ctx, uintptr(int64(r.addr)+8))
+}
+
+func (r *Elf64ShdrReader) ShAddr() (uint64, error) {
+	var buf [8]byte
+	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+16); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint64(buf[:8]), nil
+}
+
+func (r *Elf64ShdrReader) ShOffset() (uint64, error) {
+	var buf [8]byte
+	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+24); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint64(buf[:8]), nil
+}
+
+func (r *Elf64ShdrReader) ShSize() (uint64, error) {
+	var buf [8]byte
+	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+32); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint64(buf[:8]), nil
+}
+
+func (r *Elf64ShdrReader) ShLink() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+40); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+func (r *Elf64ShdrReader) ShInfo() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+44); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+func (r *Elf64ShdrReader) ShAddralign() (uint64, error) {
+	var buf [8]byte
+	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+48); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint64(buf[:8]), nil
+}
+
+func (r *Elf64ShdrReader) ShEntsize() (uint64, error) {
+	var buf [8]byte
+	if _, err := r.ctx.ReadAt(buf[:8], int64(r.addr)+56); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint64(buf[:8]), nil
+}
+
+// Elf32RelReader provides lazy, field-level access to Elf32Rel without reading the entire struct.
+type Elf32RelReader struct {
+	ctx  *runtime.ReadContext
+	addr uintptr
+}
+
+// NewElf32RelReader creates a lazy reader for Elf32Rel at the given address.
+func NewElf32RelReader(ctx *runtime.ReadContext, addr uintptr) *Elf32RelReader {
+	return &Elf32RelReader{ctx: ctx, addr: addr}
+}
+
+// Addr returns the base address of this Elf32Rel.
+func (r *Elf32RelReader) Addr() uintptr {
+	return r.addr
+}
+
+// Read materializes the full Elf32Rel struct eagerly.
+func (r *Elf32RelReader) Read() (*Elf32Rel, runtime.Errors) {
+	return ReadElf32Rel(r.ctx, r.addr)
+}
+
+func (r *Elf32RelReader) ROffset() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+0); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+// RInfo returns a lazy reader for the nested ELF32RINFO (zero I/O).
+func (r *Elf32RelReader) RInfo() *ELF32RINFOReader {
+	return NewELF32RINFOReader(r.ctx, uintptr(int64(r.addr)+4))
+}
+
+// Elf32RelaReader provides lazy, field-level access to Elf32Rela without reading the entire struct.
+type Elf32RelaReader struct {
+	ctx  *runtime.ReadContext
+	addr uintptr
+}
+
+// NewElf32RelaReader creates a lazy reader for Elf32Rela at the given address.
+func NewElf32RelaReader(ctx *runtime.ReadContext, addr uintptr) *Elf32RelaReader {
+	return &Elf32RelaReader{ctx: ctx, addr: addr}
+}
+
+// Addr returns the base address of this Elf32Rela.
+func (r *Elf32RelaReader) Addr() uintptr {
+	return r.addr
+}
+
+// Read materializes the full Elf32Rela struct eagerly.
+func (r *Elf32RelaReader) Read() (*Elf32Rela, runtime.Errors) {
+	return ReadElf32Rela(r.ctx, r.addr)
+}
+
+func (r *Elf32RelaReader) ROffset() (uint32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+0); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:4]), nil
+}
+
+// RInfo returns a lazy reader for the nested ELF32RINFO (zero I/O).
+func (r *Elf32RelaReader) RInfo() *ELF32RINFOReader {
+	return NewELF32RINFOReader(r.ctx, uintptr(int64(r.addr)+4))
+}
+
+func (r *Elf32RelaReader) RAddend() (int32, error) {
+	var buf [4]byte
+	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+8); err != nil {
+		return 0, err
+	}
+	return int32(binary.LittleEndian.Uint32(buf[:4])), nil
 }
 
 // Elf32EhdrReader provides lazy, field-level access to Elf32Ehdr without reading the entire struct.
@@ -3896,28 +3917,28 @@ func (r *Elf32EhdrReader) EShstrndx() (uint16, error) {
 	return binary.LittleEndian.Uint16(buf[:2]), nil
 }
 
-// Elf32SymReader provides lazy, field-level access to Elf32Sym without reading the entire struct.
-type Elf32SymReader struct {
+// Elf64ChdrReader provides lazy, field-level access to Elf64Chdr without reading the entire struct.
+type Elf64ChdrReader struct {
 	ctx  *runtime.ReadContext
 	addr uintptr
 }
 
-// NewElf32SymReader creates a lazy reader for Elf32Sym at the given address.
-func NewElf32SymReader(ctx *runtime.ReadContext, addr uintptr) *Elf32SymReader {
-	return &Elf32SymReader{ctx: ctx, addr: addr}
+// NewElf64ChdrReader creates a lazy reader for Elf64Chdr at the given address.
+func NewElf64ChdrReader(ctx *runtime.ReadContext, addr uintptr) *Elf64ChdrReader {
+	return &Elf64ChdrReader{ctx: ctx, addr: addr}
 }
 
-// Addr returns the base address of this Elf32Sym.
-func (r *Elf32SymReader) Addr() uintptr {
+// Addr returns the base address of this Elf64Chdr.
+func (r *Elf64ChdrReader) Addr() uintptr {
 	return r.addr
 }
 
-// Read materializes the full Elf32Sym struct eagerly.
-func (r *Elf32SymReader) Read() (*Elf32Sym, runtime.Errors) {
-	return ReadElf32Sym(r.ctx, r.addr)
+// Read materializes the full Elf64Chdr struct eagerly.
+func (r *Elf64ChdrReader) Read() (*Elf64Chdr, runtime.Errors) {
+	return ReadElf64Chdr(r.ctx, r.addr)
 }
 
-func (r *Elf32SymReader) StName() (uint32, error) {
+func (r *Elf64ChdrReader) ChType() (uint32, error) {
 	var buf [4]byte
 	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+0); err != nil {
 		return 0, err
@@ -3925,7 +3946,7 @@ func (r *Elf32SymReader) StName() (uint32, error) {
 	return binary.LittleEndian.Uint32(buf[:4]), nil
 }
 
-func (r *Elf32SymReader) StValue() (uint32, error) {
+func (r *Elf64ChdrReader) ChSize() (uint32, error) {
 	var buf [4]byte
 	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+4); err != nil {
 		return 0, err
@@ -3933,33 +3954,12 @@ func (r *Elf32SymReader) StValue() (uint32, error) {
 	return binary.LittleEndian.Uint32(buf[:4]), nil
 }
 
-func (r *Elf32SymReader) StSize() (uint32, error) {
+func (r *Elf64ChdrReader) ChAddralign() (uint32, error) {
 	var buf [4]byte
 	if _, err := r.ctx.ReadAt(buf[:4], int64(r.addr)+8); err != nil {
 		return 0, err
 	}
 	return binary.LittleEndian.Uint32(buf[:4]), nil
-}
-
-// StInfo returns a lazy reader for the nested ST (zero I/O).
-func (r *Elf32SymReader) StInfo() *STReader {
-	return NewSTReader(r.ctx, uintptr(int64(r.addr)+12))
-}
-
-func (r *Elf32SymReader) StOther() (STV, error) {
-	var buf [1]byte
-	if _, err := r.ctx.ReadAt(buf[:1], int64(r.addr)+13); err != nil {
-		return 0, err
-	}
-	return STV(buf[0]), nil
-}
-
-func (r *Elf32SymReader) StShndx() (uint16, error) {
-	var buf [2]byte
-	if _, err := r.ctx.ReadAt(buf[:2], int64(r.addr)+14); err != nil {
-		return 0, err
-	}
-	return binary.LittleEndian.Uint16(buf[:2]), nil
 }
 
 // Ensure imports are used.

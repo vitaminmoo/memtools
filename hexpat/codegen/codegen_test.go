@@ -565,6 +565,40 @@ struct File {
 	assert.Contains(t, src, "func (r *FileReader) Perms() *PermsReader")
 }
 
+func TestReaderStaticParentWithDynamicChild(t *testing.T) {
+	src := mustGenerate(t, `
+struct DynChild {
+	u32 count;
+	u8 items[count];
+};
+
+struct Parent {
+	u32 id;
+	DynChild child;
+};
+`)
+	assertCompiles(t, src)
+	// Parent should get a reader even though DynChild doesn't
+	assert.Contains(t, src, "type ParentReader struct")
+	assert.NotContains(t, src, "DynChildReader")
+	// Parent's child accessor should eagerly read via ReadDynChild
+	assert.Contains(t, src, "func (r *ParentReader) Child() (*DynChild, runtime.Errors)")
+	assert.Contains(t, src, "ReadDynChild(r.ctx")
+}
+
+func TestReaderBoolField(t *testing.T) {
+	src := mustGenerate(t, `
+struct Flags {
+	bool active;
+	u32 value;
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "func (r *FlagsReader) Active() (bool, error)")
+	// Should return false on error, not 0
+	assert.Contains(t, src, "return false, err")
+}
+
 func TestReaderWithEndianOverride(t *testing.T) {
 	src := mustGenerate(t, `
 struct Mixed {

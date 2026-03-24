@@ -107,6 +107,17 @@ func Generate(pkg *resolve.Package, opts Options) ([]byte, error) {
 		}
 	}
 
+	// Lazy reader types — build set of names that have readers
+	hasReader := make(map[string]bool)
+	for _, bt := range pkg.Bitfields {
+		hasReader[bt.Name] = true
+	}
+	for _, st := range pkg.Structs {
+		if readerEligible(st) {
+			hasReader[st.Name] = true
+		}
+	}
+
 	// Lazy reader types — bitfields
 	for _, bt := range pkg.Bitfields {
 		writeBitfieldReaderStruct(&buf, bt)
@@ -118,7 +129,7 @@ func Generate(pkg *resolve.Package, opts Options) ([]byte, error) {
 			writeReaderStruct(&buf, st)
 			writeReaderAddr(&buf, st)
 			writeReaderMaterialize(&buf, st)
-			writeReaderMethods(&buf, st, pkg.Endian)
+			writeReaderMethods(&buf, st, pkg.Endian, hasReader)
 		}
 	}
 

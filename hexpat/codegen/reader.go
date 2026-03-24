@@ -69,7 +69,8 @@ func writeReaderAddr(buf *bytes.Buffer, st *resolve.StructType) {
 }
 
 // writeReaderMethods emits per-field accessor methods on the reader.
-func writeReaderMethods(buf *bytes.Buffer, st *resolve.StructType, defaultEndian resolve.Endian) {
+// hasReader is the set of struct names that have reader types generated.
+func writeReaderMethods(buf *bytes.Buffer, st *resolve.StructType, defaultEndian resolve.Endian, hasReader map[string]bool) {
 	for _, m := range st.Members {
 		fm, ok := m.(*resolve.FieldMember)
 		if !ok {
@@ -88,13 +89,17 @@ func writeReaderMethods(buf *bytes.Buffer, st *resolve.StructType, defaultEndian
 		case resolve.KindEnum:
 			writeReaderEnumAccessor(buf, st.Name, f, addrExpr, endian)
 		case resolve.KindStruct:
-			writeReaderStructAccessor(buf, st.Name, f, addrExpr)
+			if hasReader[f.Type.StructRef.Name] {
+				writeReaderStructAccessor(buf, st.Name, f, addrExpr)
+			} else {
+				writeReaderEagerStructAccessor(buf, st.Name, f, addrExpr)
+			}
 		case resolve.KindBitfield:
 			writeReaderBitfieldAccessor(buf, st.Name, f, addrExpr)
 		case resolve.KindPointer:
-			writeReaderPointerAccessor(buf, st.Name, f, addrExpr, endian)
+			writeReaderPointerAccessor(buf, st.Name, f, addrExpr, endian, hasReader)
 		case resolve.KindArray:
-			writeReaderArrayAccessor(buf, st.Name, f, addrExpr, endian)
+			writeReaderArrayAccessor(buf, st.Name, f, addrExpr, endian, hasReader)
 		}
 	}
 }
@@ -119,6 +124,8 @@ func writeReaderPrimitiveAccessor(buf *bytes.Buffer, structName string, f *resol
 	if strings.HasPrefix(goType, "[") {
 		fmt.Fprintf(buf, "\t\tvar zero %s\n", retType)
 		fmt.Fprintf(buf, "\t\treturn zero, err\n")
+	} else if goType == "bool" {
+		fmt.Fprintf(buf, "\t\treturn false, err\n")
 	} else {
 		fmt.Fprintf(buf, "\t\treturn 0, err\n")
 	}
@@ -201,6 +208,16 @@ func writeReaderStructAccessor(buf *bytes.Buffer, structName string, f *resolve.
 	fmt.Fprintf(buf, "}\n\n")
 }
 
+// writeReaderEagerStructAccessor emits an accessor that eagerly reads a nested struct
+// when that struct doesn't have a reader type (e.g., dynamic-offset structs).
+func writeReaderEagerStructAccessor(buf *bytes.Buffer, structName string, f *resolve.Field, addrExpr string) {
+	childName := f.Type.StructRef.Name
+	fmt.Fprintf(buf, "// %s eagerly reads the nested %s (no lazy reader available for this type).\n", f.Name, childName)
+	fmt.Fprintf(buf, "func (r *%sReader) %s() (*%s, runtime.Errors) {\n", structName, f.Name, childName)
+	fmt.Fprintf(buf, "\treturn Read%s(r.ctx, uintptr(%s))\n", childName, addrExpr)
+	fmt.Fprintf(buf, "}\n\n")
+}
+
 func writeReaderBitfieldAccessor(buf *bytes.Buffer, structName string, f *resolve.Field, addrExpr string) {
 	childName := f.Type.BitfieldRef.Name
 	fmt.Fprintf(buf, "// %s returns a lazy reader for the nested %s (zero I/O).\n", f.Name, childName)
@@ -209,7 +226,7 @@ func writeReaderBitfieldAccessor(buf *bytes.Buffer, structName string, f *resolv
 	fmt.Fprintf(buf, "}\n\n")
 }
 
-func writeReaderPointerAccessor(buf *bytes.Buffer, structName string, f *resolve.Field, addrExpr string, endian resolve.Endian) {
+func writeReaderPointerAccessor(buf *bytes.Buffer, structName string, f *resolve.Field, addrExpr string, endian resolve.Endian, hasReader map[string]bool) {
 	ptr := f.Type.Pointer
 	ptrSize := ptr.SizeType.Size
 	ev := endianVar(endian)
@@ -219,9 +236,16 @@ func writeReaderPointerAccessor(buf *bytes.Buffer, structName string, f *resolve
 		return // only support struct pointers
 	}
 	childName := pointee.StructRef.Name
+	childHasReader := hasReader[childName]
 
-	fmt.Fprintf(buf, "// %s reads the pointer value and returns a lazy reader for the target %s.\n", f.Name, childName)
-	fmt.Fprintf(buf, "func (r *%sReader) %s() (*%sReader, error) {\n", structName, f.Name, childName)
+	if childHasReader {
+		fmt.Fprintf(buf, "// %s reads the pointer value and returns a lazy reader for the target %s.\n", f.Name, childName)
+		fmt.Fprintf(buf, "func (r *%sReader) %s() (*%sReader, error) {\n", structName, f.Name, childName)
+	} else {
+		fmt.Fprintf(buf, "// %s reads the pointer and eagerly materializes the target %s.\n", f.Name, childName)
+		fmt.Fprintf(buf, "func (r *%sReader) %s() (*%s, error) {\n", structName, f.Name, childName)
+	}
+
 	fmt.Fprintf(buf, "\tvar buf [%d]byte\n", ptrSize)
 	fmt.Fprintf(buf, "\tif _, err := r.ctx.ReadAt(buf[:%d], %s); err != nil {\n", ptrSize, addrExpr)
 	fmt.Fprintf(buf, "\t\treturn nil, err\n")
@@ -241,11 +265,21 @@ func writeReaderPointerAccessor(buf *bytes.Buffer, structName string, f *resolve
 	fmt.Fprintf(buf, "\tif ptrAddr == 0 || r.ctx.Visit(ptrAddr) {\n")
 	fmt.Fprintf(buf, "\t\treturn nil, nil\n")
 	fmt.Fprintf(buf, "\t}\n")
-	fmt.Fprintf(buf, "\treturn New%sReader(r.ctx, ptrAddr), nil\n", childName)
+
+	if childHasReader {
+		fmt.Fprintf(buf, "\treturn New%sReader(r.ctx, ptrAddr), nil\n", childName)
+	} else {
+		fmt.Fprintf(buf, "\tchild, errs := Read%s(r.ctx, ptrAddr)\n", childName)
+		fmt.Fprintf(buf, "\tif errs.HasFatal() {\n")
+		fmt.Fprintf(buf, "\t\treturn child, errs[0]\n")
+		fmt.Fprintf(buf, "\t}\n")
+		fmt.Fprintf(buf, "\treturn child, nil\n")
+	}
+
 	fmt.Fprintf(buf, "}\n\n")
 }
 
-func writeReaderArrayAccessor(buf *bytes.Buffer, structName string, f *resolve.Field, addrExpr string, endian resolve.Endian) {
+func writeReaderArrayAccessor(buf *bytes.Buffer, structName string, f *resolve.Field, addrExpr string, endian resolve.Endian, hasReader map[string]bool) {
 	arr := f.Type.Array
 	elem := arr.Element
 
@@ -258,7 +292,10 @@ func writeReaderArrayAccessor(buf *bytes.Buffer, structName string, f *resolve.F
 	case resolve.KindPrimitive:
 		writeReaderPrimitiveArrayAccessor(buf, structName, f, addrExpr, endian)
 	case resolve.KindStruct:
-		writeReaderStructArrayAccessor(buf, structName, f, addrExpr)
+		if hasReader[elem.StructRef.Name] {
+			writeReaderStructArrayAccessor(buf, structName, f, addrExpr)
+		}
+		// If child struct has no reader, skip — caller can use Read() to materialize
 	}
 }
 
