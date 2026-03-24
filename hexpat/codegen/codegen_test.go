@@ -379,3 +379,204 @@ struct Data {
 	assert.Contains(t, src, "Values []uint32")
 	assert.Contains(t, src, "make([]uint32")
 }
+
+// --- Reader generation tests ---
+
+func TestReaderSimpleStruct(t *testing.T) {
+	src := mustGenerate(t, `
+struct Header {
+	u32 magic;
+	u16 version;
+	u8 flags;
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "type HeaderReader struct")
+	assert.Contains(t, src, "func NewHeaderReader(")
+	assert.Contains(t, src, "func (r *HeaderReader) Magic() (uint32, error)")
+	assert.Contains(t, src, "func (r *HeaderReader) Version() (uint16, error)")
+	assert.Contains(t, src, "func (r *HeaderReader) Flags() (uint8, error)")
+	assert.Contains(t, src, "func (r *HeaderReader) Read() (*Header, runtime.Errors)")
+	assert.Contains(t, src, "func (r *HeaderReader) Addr() uintptr")
+}
+
+func TestReaderNestedStruct(t *testing.T) {
+	src := mustGenerate(t, `
+struct Inner {
+	u16 x;
+	u16 y;
+};
+
+struct Outer {
+	u32 id;
+	Inner pos;
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "type InnerReader struct")
+	assert.Contains(t, src, "type OuterReader struct")
+	assert.Contains(t, src, "func (r *OuterReader) Pos() *InnerReader")
+	// Nested struct accessor should be zero I/O (no error return)
+	assert.NotContains(t, src, "func (r *OuterReader) Pos() (*InnerReader, error)")
+}
+
+func TestReaderPointer(t *testing.T) {
+	src := mustGenerate(t, `
+struct Node {
+	u32 value;
+	Node *next : u64;
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "type NodeReader struct")
+	assert.Contains(t, src, "func (r *NodeReader) Value() (uint32, error)")
+	assert.Contains(t, src, "func (r *NodeReader) Next() (*NodeReader, error)")
+	assert.Contains(t, src, "r.ctx.Visit(ptrAddr)")
+}
+
+func TestReaderWithArray(t *testing.T) {
+	src := mustGenerate(t, `
+struct Header {
+	u8 magic[4];
+	u32 values[3];
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "func (r *HeaderReader) Magic() ([4]uint8, error)")
+	assert.Contains(t, src, "func (r *HeaderReader) Values() ([3]uint32, error)")
+}
+
+func TestReaderWithStructArray(t *testing.T) {
+	src := mustGenerate(t, `
+struct Point {
+	u16 x;
+	u16 y;
+};
+
+struct Path {
+	u32 count;
+	Point points[3];
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "func (r *PathReader) Points() [3]PointReader")
+}
+
+func TestReaderNotGeneratedForDynamicStruct(t *testing.T) {
+	src := mustGenerate(t, `
+struct Data {
+	u32 count;
+	u8 items[count];
+};
+`)
+	assertCompiles(t, src)
+	// Dynamic struct should NOT get a reader
+	assert.NotContains(t, src, "DataReader")
+}
+
+func TestReaderNotGeneratedForConditionalStruct(t *testing.T) {
+	src := mustGenerate(t, `
+struct Header {
+	u32 flags;
+	if (flags & 0x01) {
+		u32 extra;
+	}
+};
+`)
+	assertCompiles(t, src)
+	assert.NotContains(t, src, "HeaderReader")
+}
+
+func TestReaderWithEnum(t *testing.T) {
+	src := mustGenerate(t, `
+enum Status : u16 {
+	OK = 0,
+	Error = 1
+};
+
+struct Msg {
+	Status status;
+	u32 payload;
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "func (r *MsgReader) Status() (Status, error)")
+	assert.Contains(t, src, "func (r *MsgReader) Payload() (uint32, error)")
+}
+
+func TestReaderWithFloats(t *testing.T) {
+	src := mustGenerate(t, `
+struct Vec3 {
+	float x;
+	float y;
+	double z;
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "func (r *Vec3Reader) X() (float32, error)")
+	assert.Contains(t, src, "func (r *Vec3Reader) Z() (float64, error)")
+	assert.Contains(t, src, "math.Float32frombits")
+	assert.Contains(t, src, "math.Float64frombits")
+}
+
+func TestReaderIntegration(t *testing.T) {
+	// Build binary data: magic=0xDEADBEEF, version=0x0102, flags=0x42
+	var data bytes.Buffer
+	binary.Write(&data, binary.LittleEndian, uint32(0xDEADBEEF))
+	binary.Write(&data, binary.LittleEndian, uint16(0x0102))
+	binary.Write(&data, binary.LittleEndian, uint8(0x42))
+
+	ctx := runtime.NewReadContext(bytes.NewReader(data.Bytes()))
+
+	// Test that we can read individual fields at the right offsets
+	var buf [4]byte
+
+	// Magic at offset 0
+	_, err := ctx.ReadAt(buf[:4], 0)
+	require.NoError(t, err)
+	assert.Equal(t, uint32(0xDEADBEEF), binary.LittleEndian.Uint32(buf[:4]))
+
+	// Version at offset 4
+	_, err = ctx.ReadAt(buf[:2], 4)
+	require.NoError(t, err)
+	assert.Equal(t, uint16(0x0102), binary.LittleEndian.Uint16(buf[:2]))
+
+	// Flags at offset 6
+	_, err = ctx.ReadAt(buf[:1], 6)
+	require.NoError(t, err)
+	assert.Equal(t, uint8(0x42), buf[0])
+}
+
+func TestReaderWithBitfield(t *testing.T) {
+	src := mustGenerate(t, `
+bitfield Perms {
+	read : 1;
+	write : 1;
+	padding : 6;
+};
+
+struct File {
+	u32 size;
+	Perms perms;
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "type FileReader struct")
+	assert.Contains(t, src, "func (r *FileReader) Perms() *PermsReader")
+}
+
+func TestReaderWithEndianOverride(t *testing.T) {
+	src := mustGenerate(t, `
+struct Mixed {
+	le u32 little_val;
+	be u32 big_val;
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "type MixedReader struct")
+	assert.Contains(t, src, "func (r *MixedReader) LittleVal() (uint32, error)")
+	assert.Contains(t, src, "func (r *MixedReader) BigVal() (uint32, error)")
+	// The reader methods should use the correct endian
+	assert.Contains(t, src, "binary.LittleEndian.Uint32")
+	assert.Contains(t, src, "binary.BigEndian.Uint32")
+}

@@ -9,5 +9,6 @@
 
 ## Codegen Enhancements
 
-- [ ] Lazy reader / scanner pattern generation (`*FooReader` with chained method calls and short-circuit error propagation)
+- [x] Lazy reader generation (`*FooReader` with per-field accessors, zero-I/O sub-readers for nested structs, lazy pointer following) — static-offset structs only
+- [ ] Lazy reader support for dynamic-offset structs (conditionals, expression-length arrays)
 - [ ] `sizeof()` / `addressof()` support in generated code

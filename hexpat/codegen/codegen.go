@@ -107,6 +107,21 @@ func Generate(pkg *resolve.Package, opts Options) ([]byte, error) {
 		}
 	}
 
+	// Lazy reader types — bitfields
+	for _, bt := range pkg.Bitfields {
+		writeBitfieldReaderStruct(&buf, bt)
+	}
+
+	// Lazy reader types — structs
+	for _, st := range pkg.Structs {
+		if readerEligible(st) {
+			writeReaderStruct(&buf, st)
+			writeReaderAddr(&buf, st)
+			writeReaderMaterialize(&buf, st)
+			writeReaderMethods(&buf, st, pkg.Endian)
+		}
+	}
+
 	// Suppress unused import warnings
 	if needsMath || needsBinary || needsJSON || needsFmt {
 		fmt.Fprintf(&buf, "// Ensure imports are used.\nvar (\n")
