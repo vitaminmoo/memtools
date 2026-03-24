@@ -79,8 +79,11 @@ struct Node {
 };
 `)
 	assertCompiles(t, src)
-	assert.Contains(t, src, "*Node")
-	assert.Contains(t, src, "ctx.Visit")
+	// Pointer field stored as raw value (uint64 for :u64)
+	assert.Contains(t, src, "Next  uint64")
+	// Follow method on eager struct
+	assert.Contains(t, src, "func (s *Node) ReadNext(ctx *runtime.ReadContext) (*Node, runtime.Errors)")
+	assert.Contains(t, src, "if s.Next == 0")
 }
 
 func TestGenerateWithArray(t *testing.T) {
@@ -430,8 +433,10 @@ struct Node {
 	assertCompiles(t, src)
 	assert.Contains(t, src, "type NodeReader struct")
 	assert.Contains(t, src, "func (r *NodeReader) Value() (uint32, error)")
-	assert.Contains(t, src, "func (r *NodeReader) Next() (*NodeReader, error)")
-	assert.Contains(t, src, "r.ctx.Visit(ptrAddr)")
+	// Raw value accessor returns uint64 (storage type)
+	assert.Contains(t, src, "func (r *NodeReader) Next() (uint64, error)")
+	// Follow method reads and follows the pointer
+	assert.Contains(t, src, "func (r *NodeReader) FollowNext() (*Node, runtime.Errors)")
 }
 
 func TestReaderWithArray(t *testing.T) {
@@ -613,4 +618,80 @@ struct Mixed {
 	// The reader methods should use the correct endian
 	assert.Contains(t, src, "binary.LittleEndian.Uint32")
 	assert.Contains(t, src, "binary.BigEndian.Uint32")
+}
+
+func TestGeneratePointerFollowMethod(t *testing.T) {
+	src := mustGenerate(t, `
+struct Target {
+	u32 value;
+};
+
+struct Container {
+	Target *ptr : u32;
+	u32 other;
+};
+`)
+	assertCompiles(t, src)
+	// Eager struct stores raw uint32
+	assert.Contains(t, src, "Ptr   uint32")
+	// Follow method on eager struct
+	assert.Contains(t, src, "func (s *Container) ReadPtr(ctx *runtime.ReadContext) (*Target, runtime.Errors)")
+	// Lazy reader raw accessor
+	assert.Contains(t, src, "func (r *ContainerReader) Ptr() (uint32, error)")
+	// Lazy reader follow method
+	assert.Contains(t, src, "func (r *ContainerReader) FollowPtr() (*Target, runtime.Errors)")
+}
+
+func TestGeneratePlacementPointer(t *testing.T) {
+	src := mustGenerate(t, `
+struct EntityManager {
+	u32 count;
+	u32 capacity;
+};
+
+EntityManager *g_entityManager : u32 @ 0x01204B98;
+`)
+	assertCompiles(t, src)
+	// Address constant
+	assert.Contains(t, src, "AddrGEntityManager uint32 = 0x01204B98")
+	// Read function that follows the pointer
+	assert.Contains(t, src, "func ReadGEntityManager(ctx *runtime.ReadContext) (*EntityManager, runtime.Errors)")
+	assert.Contains(t, src, "int64(AddrGEntityManager)")
+}
+
+func TestGeneratePlacementPrimitive(t *testing.T) {
+	src := mustGenerate(t, `
+u32 g_worldSeed @ 0x01205004;
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "AddrGWorldSeed uint32 = 0x01205004")
+	assert.Contains(t, src, "func ReadGWorldSeed(ctx *runtime.ReadContext) (uint32, error)")
+}
+
+func TestGeneratePlacementStruct(t *testing.T) {
+	src := mustGenerate(t, `
+struct Config {
+	u32 flags;
+	u16 version;
+};
+
+Config g_config @ 0x00400000;
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "AddrGConfig uint32 = 0x00400000")
+	assert.Contains(t, src, "func ReadGConfig(ctx *runtime.ReadContext) (*Config, runtime.Errors)")
+}
+
+func TestGenerateMultiplePlacements(t *testing.T) {
+	src := mustGenerate(t, `
+struct Globals {
+	u32 value;
+};
+
+Globals *g_globals : u32 @ 0x01000000;
+u32 g_seed @ 0x02000000;
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "AddrGGlobals uint32 = 0x01000000")
+	assert.Contains(t, src, "AddrGSeed")
 }

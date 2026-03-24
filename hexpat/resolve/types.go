@@ -10,11 +10,20 @@ const (
 
 // Package is the resolved IR for an entire hexpat file.
 type Package struct {
-	Name      string
-	Endian    Endian
-	Structs   []*StructType // dependency order
-	Enums     []*EnumType
-	Bitfields []*BitfieldType
+	Name       string
+	Endian     Endian
+	Structs    []*StructType // dependency order
+	Enums      []*EnumType
+	Bitfields  []*BitfieldType
+	Placements []*Placement // top-level variable placements (@ address)
+}
+
+// Placement represents a top-level variable placed at a static address.
+type Placement struct {
+	Name    string        // Go name (PascalCase)
+	RawName string        // original hexpat name
+	Address int64         // static address from @ expression
+	Type    *ResolvedType // resolved type of the variable
 }
 
 // StructType is a resolved struct/union definition.

@@ -54,6 +54,10 @@ func Generate(pkg *resolve.Package, opts Options) ([]byte, error) {
 		needsBinary = true
 		needsRuntime = true
 	}
+	if len(pkg.Placements) > 0 {
+		needsBinary = true
+		needsRuntime = true
+	}
 
 	var imports []string
 	if needsBinary {
@@ -104,6 +108,19 @@ func Generate(pkg *resolve.Package, opts Options) ([]byte, error) {
 	for _, st := range pkg.Structs {
 		if len(st.Fields()) > 0 {
 			writeReadFunc(&buf, st, pkg.Endian)
+		}
+	}
+
+	// Pointer follow methods on eager structs
+	for _, st := range pkg.Structs {
+		writePointerFollowMethods(&buf, st)
+	}
+
+	// Static address placements
+	if len(pkg.Placements) > 0 {
+		writePlacementConstants(&buf, pkg.Placements)
+		for _, p := range pkg.Placements {
+			writePlacementReadFunc(&buf, p, pkg.Endian)
 		}
 	}
 
@@ -167,8 +184,10 @@ func writeStruct(buf *bytes.Buffer, st *resolve.StructType) {
 func fieldGoType(rt *resolve.ResolvedType) string {
 	switch rt.Kind {
 	case resolve.KindPointer:
-		if rt.Pointer != nil && rt.Pointer.Pointee != nil {
-			return "*" + fieldGoType(rt.Pointer.Pointee)
+		// Store raw pointer value (e.g. uint32 for :u32) instead of *PointeeType.
+		// Follow methods are generated separately.
+		if rt.Pointer != nil {
+			return rt.Pointer.SizeType.GoType
 		}
 		return rt.GoType
 	default:
@@ -504,27 +523,127 @@ func writePointerRead(buf *bytes.Buffer, f *resolve.Field, path string, addrExpr
 	fmt.Fprintf(buf, "\t\terrs.Add(%q, uintptr(%s), err)\n", path, addrExpr)
 	fmt.Fprintf(buf, "\t} else {\n")
 
-	// Read pointer address
+	// Store raw pointer value
 	switch ptrSize {
 	case 4:
-		fmt.Fprintf(buf, "\t\tptrAddr := uintptr(%s.Uint32(buf[:%d]))\n", ev, ptrSize)
+		fmt.Fprintf(buf, "\t\tresult.%s = %s.Uint32(buf[:%d])\n", f.Name, ev, ptrSize)
 	case 8:
-		fmt.Fprintf(buf, "\t\tptrAddr := uintptr(%s.Uint64(buf[:%d]))\n", ev, ptrSize)
-	default:
-		fmt.Fprintf(buf, "\t\t_ = buf // unsupported pointer size %d\n", ptrSize)
-		fmt.Fprintf(buf, "\t}\n\n")
-		return
+		fmt.Fprintf(buf, "\t\tresult.%s = %s.Uint64(buf[:%d])\n", f.Name, ev, ptrSize)
 	}
 
-	fmt.Fprintf(buf, "\t\tif ptrAddr != 0 && !ctx.Visit(ptrAddr) {\n")
-
-	pointee := ptr.Pointee
-	if pointee.Kind == resolve.KindStruct && pointee.StructRef != nil {
-		fmt.Fprintf(buf, "\t\t\tchild, childErrs := Read%s(ctx, ptrAddr)\n", pointee.StructRef.Name)
-		fmt.Fprintf(buf, "\t\t\tresult.%s = child\n", f.Name)
-		fmt.Fprintf(buf, "\t\t\terrs = append(errs, childErrs...)\n")
-	}
-
-	fmt.Fprintf(buf, "\t\t}\n")
 	fmt.Fprintf(buf, "\t}\n\n")
+}
+
+// writePointerFollowMethods emits Read<Field>(ctx) methods on eager structs
+// for each pointer field, allowing consumers to follow pointers conveniently.
+func writePointerFollowMethods(buf *bytes.Buffer, st *resolve.StructType) {
+	for _, f := range st.Fields() {
+		if f.Type.Kind != resolve.KindPointer || f.Type.Pointer == nil {
+			continue
+		}
+		ptr := f.Type.Pointer
+		pointee := ptr.Pointee
+		if pointee.Kind != resolve.KindStruct || pointee.StructRef == nil {
+			continue
+		}
+		childName := pointee.StructRef.Name
+		fmt.Fprintf(buf, "// Read%s follows the %s pointer and reads the target %s.\n", f.Name, f.Name, childName)
+		fmt.Fprintf(buf, "func (s *%s) Read%s(ctx *runtime.ReadContext) (*%s, runtime.Errors) {\n", st.Name, f.Name, childName)
+		fmt.Fprintf(buf, "\tif s.%s == 0 {\n", f.Name)
+		fmt.Fprintf(buf, "\t\treturn nil, nil\n")
+		fmt.Fprintf(buf, "\t}\n")
+		fmt.Fprintf(buf, "\treturn Read%s(ctx, uintptr(s.%s))\n", childName, f.Name)
+		fmt.Fprintf(buf, "}\n\n")
+	}
+}
+
+// writePlacementConstants emits a const block for all static address placements.
+func writePlacementConstants(buf *bytes.Buffer, placements []*resolve.Placement) {
+	fmt.Fprintf(buf, "// Static address constants for top-level placements.\nconst (\n")
+	for _, p := range placements {
+		fmt.Fprintf(buf, "\tAddr%s uint32 = 0x%08X\n", p.Name, p.Address)
+	}
+	fmt.Fprintf(buf, ")\n\n")
+}
+
+// writePlacementReadFunc emits a read function for a top-level placement.
+func writePlacementReadFunc(buf *bytes.Buffer, p *resolve.Placement, defaultEndian resolve.Endian) {
+	endian := p.Type.Endian
+	if endian != resolve.BigEndian && endian != resolve.LittleEndian {
+		endian = defaultEndian
+	}
+	ev := endianVar(endian)
+
+	if p.Type.Kind == resolve.KindPointer && p.Type.Pointer != nil {
+		// Pointer placement: read the pointer value at the static address, then follow it
+		ptr := p.Type.Pointer
+		ptrSize := ptr.SizeType.Size
+		pointee := ptr.Pointee
+
+		if pointee.Kind == resolve.KindStruct && pointee.StructRef != nil {
+			childName := pointee.StructRef.Name
+			fmt.Fprintf(buf, "// Read%s reads the pointer at Addr%s and follows it to %s.\n", p.Name, p.Name, childName)
+			fmt.Fprintf(buf, "func Read%s(ctx *runtime.ReadContext) (*%s, runtime.Errors) {\n", p.Name, childName)
+			fmt.Fprintf(buf, "\tvar buf [%d]byte\n", ptrSize)
+			fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(buf[:], int64(Addr%s)); err != nil {\n", p.Name)
+			fmt.Fprintf(buf, "\t\tvar errs runtime.Errors\n")
+			fmt.Fprintf(buf, "\t\terrs.Add(%q, uintptr(Addr%s), err)\n", p.RawName, p.Name)
+			fmt.Fprintf(buf, "\t\treturn nil, errs\n")
+			fmt.Fprintf(buf, "\t}\n")
+			switch ptrSize {
+			case 4:
+				fmt.Fprintf(buf, "\tptr := %s.Uint32(buf[:])\n", ev)
+			case 8:
+				fmt.Fprintf(buf, "\tptr := %s.Uint64(buf[:])\n", ev)
+			}
+			fmt.Fprintf(buf, "\tif ptr == 0 {\n")
+			fmt.Fprintf(buf, "\t\treturn nil, nil\n")
+			fmt.Fprintf(buf, "\t}\n")
+			fmt.Fprintf(buf, "\treturn Read%s(ctx, uintptr(ptr))\n", childName)
+			fmt.Fprintf(buf, "}\n\n")
+		}
+	} else if p.Type.Kind == resolve.KindPrimitive && p.Type.Primitive != nil {
+		// Non-pointer primitive placement: just read the value
+		prim := p.Type.Primitive
+		size := prim.Size
+		fmt.Fprintf(buf, "// Read%s reads the %s at Addr%s.\n", p.Name, prim.GoType, p.Name)
+		fmt.Fprintf(buf, "func Read%s(ctx *runtime.ReadContext) (%s, error) {\n", p.Name, prim.GoType)
+		fmt.Fprintf(buf, "\tvar buf [%d]byte\n", size)
+		fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(buf[:], int64(Addr%s)); err != nil {\n", p.Name)
+		fmt.Fprintf(buf, "\t\treturn 0, err\n")
+		fmt.Fprintf(buf, "\t}\n")
+
+		switch prim.GoType {
+		case "uint8", "byte":
+			fmt.Fprintf(buf, "\treturn buf[0], nil\n")
+		case "int8":
+			fmt.Fprintf(buf, "\treturn int8(buf[0]), nil\n")
+		case "bool":
+			fmt.Fprintf(buf, "\treturn buf[0] != 0, nil\n")
+		case "uint16":
+			fmt.Fprintf(buf, "\treturn %s.Uint16(buf[:]), nil\n", ev)
+		case "int16":
+			fmt.Fprintf(buf, "\treturn int16(%s.Uint16(buf[:])), nil\n", ev)
+		case "uint32":
+			fmt.Fprintf(buf, "\treturn %s.Uint32(buf[:]), nil\n", ev)
+		case "int32":
+			fmt.Fprintf(buf, "\treturn int32(%s.Uint32(buf[:])), nil\n", ev)
+		case "uint64":
+			fmt.Fprintf(buf, "\treturn %s.Uint64(buf[:]), nil\n", ev)
+		case "int64":
+			fmt.Fprintf(buf, "\treturn int64(%s.Uint64(buf[:])), nil\n", ev)
+		case "float32":
+			fmt.Fprintf(buf, "\treturn math.Float32frombits(%s.Uint32(buf[:])), nil\n", ev)
+		case "float64":
+			fmt.Fprintf(buf, "\treturn math.Float64frombits(%s.Uint64(buf[:])), nil\n", ev)
+		}
+		fmt.Fprintf(buf, "}\n\n")
+	} else if p.Type.Kind == resolve.KindStruct && p.Type.StructRef != nil {
+		// Non-pointer struct placement: read the struct directly at that address
+		structName := p.Type.StructRef.Name
+		fmt.Fprintf(buf, "// Read%s reads %s at Addr%s.\n", p.Name, structName, p.Name)
+		fmt.Fprintf(buf, "func Read%s(ctx *runtime.ReadContext) (*%s, runtime.Errors) {\n", p.Name, structName)
+		fmt.Fprintf(buf, "\treturn Read%s(ctx, uintptr(Addr%s))\n", structName, p.Name)
+		fmt.Fprintf(buf, "}\n\n")
+	}
 }

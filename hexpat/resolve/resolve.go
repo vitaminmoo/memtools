@@ -98,6 +98,28 @@ func Resolve(file *parser.File) (*Package, error) {
 	// Topological sort
 	r.pkg.Structs = r.topoSort()
 
+	// Resolve top-level placements (VarDecl with @ address)
+	for _, item := range file.Items {
+		vd, ok := item.(parser.VarDecl)
+		if !ok || vd.Offset == nil {
+			continue
+		}
+		nl, ok := vd.Offset.(parser.NumberLit)
+		if !ok {
+			continue // only static numeric addresses
+		}
+		rt, err := r.resolveType(vd.Type, vd.Pointer, r.pkg.Endian)
+		if err != nil {
+			continue // skip unresolvable types
+		}
+		r.pkg.Placements = append(r.pkg.Placements, &Placement{
+			Name:    toPascalCase(vd.Name),
+			RawName: vd.Name,
+			Address: nl.Value,
+			Type:    rt,
+		})
+	}
+
 	return r.pkg, nil
 }
 

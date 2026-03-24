@@ -230,52 +230,41 @@ func writeReaderPointerAccessor(buf *bytes.Buffer, structName string, f *resolve
 	ptr := f.Type.Pointer
 	ptrSize := ptr.SizeType.Size
 	ev := endianVar(endian)
+	storageType := ptr.SizeType.GoType
 
-	pointee := ptr.Pointee
-	if pointee.Kind != resolve.KindStruct || pointee.StructRef == nil {
-		return // only support struct pointers
-	}
-	childName := pointee.StructRef.Name
-	childHasReader := hasReader[childName]
-
-	if childHasReader {
-		fmt.Fprintf(buf, "// %s reads the pointer value and returns a lazy reader for the target %s.\n", f.Name, childName)
-		fmt.Fprintf(buf, "func (r *%sReader) %s() (*%sReader, error) {\n", structName, f.Name, childName)
-	} else {
-		fmt.Fprintf(buf, "// %s reads the pointer and eagerly materializes the target %s.\n", f.Name, childName)
-		fmt.Fprintf(buf, "func (r *%sReader) %s() (*%s, error) {\n", structName, f.Name, childName)
-	}
-
+	// Raw value accessor — returns the pointer address as uint32/uint64
+	fmt.Fprintf(buf, "func (r *%sReader) %s() (%s, error) {\n", structName, f.Name, storageType)
 	fmt.Fprintf(buf, "\tvar buf [%d]byte\n", ptrSize)
 	fmt.Fprintf(buf, "\tif _, err := r.ctx.ReadAt(buf[:%d], %s); err != nil {\n", ptrSize, addrExpr)
-	fmt.Fprintf(buf, "\t\treturn nil, err\n")
+	fmt.Fprintf(buf, "\t\treturn 0, err\n")
 	fmt.Fprintf(buf, "\t}\n")
-
 	switch ptrSize {
 	case 4:
-		fmt.Fprintf(buf, "\tptrAddr := uintptr(%s.Uint32(buf[:%d]))\n", ev, ptrSize)
+		fmt.Fprintf(buf, "\treturn %s.Uint32(buf[:%d]), nil\n", ev, ptrSize)
 	case 8:
-		fmt.Fprintf(buf, "\tptrAddr := uintptr(%s.Uint64(buf[:%d]))\n", ev, ptrSize)
-	default:
-		fmt.Fprintf(buf, "\treturn nil, nil // unsupported pointer size %d\n", ptrSize)
-		fmt.Fprintf(buf, "}\n\n")
+		fmt.Fprintf(buf, "\treturn %s.Uint64(buf[:%d]), nil\n", ev, ptrSize)
+	}
+	fmt.Fprintf(buf, "}\n\n")
+
+	// Follow method — reads the pointer and follows it to the target struct
+	pointee := ptr.Pointee
+	if pointee.Kind != resolve.KindStruct || pointee.StructRef == nil {
 		return
 	}
+	childName := pointee.StructRef.Name
 
-	fmt.Fprintf(buf, "\tif ptrAddr == 0 || r.ctx.Visit(ptrAddr) {\n")
+	fmt.Fprintf(buf, "// Follow%s reads the %s pointer and follows it to the target %s.\n", f.Name, f.Name, childName)
+	fmt.Fprintf(buf, "func (r *%sReader) Follow%s() (*%s, runtime.Errors) {\n", structName, f.Name, childName)
+	fmt.Fprintf(buf, "\tptr, err := r.%s()\n", f.Name)
+	fmt.Fprintf(buf, "\tif err != nil || ptr == 0 {\n")
+	fmt.Fprintf(buf, "\t\tif err != nil {\n")
+	fmt.Fprintf(buf, "\t\t\tvar errs runtime.Errors\n")
+	fmt.Fprintf(buf, "\t\t\terrs.Add(%q, r.addr, err)\n", structName+"."+f.Name)
+	fmt.Fprintf(buf, "\t\t\treturn nil, errs\n")
+	fmt.Fprintf(buf, "\t\t}\n")
 	fmt.Fprintf(buf, "\t\treturn nil, nil\n")
 	fmt.Fprintf(buf, "\t}\n")
-
-	if childHasReader {
-		fmt.Fprintf(buf, "\treturn New%sReader(r.ctx, ptrAddr), nil\n", childName)
-	} else {
-		fmt.Fprintf(buf, "\tchild, errs := Read%s(r.ctx, ptrAddr)\n", childName)
-		fmt.Fprintf(buf, "\tif errs.HasFatal() {\n")
-		fmt.Fprintf(buf, "\t\treturn child, errs[0]\n")
-		fmt.Fprintf(buf, "\t}\n")
-		fmt.Fprintf(buf, "\treturn child, nil\n")
-	}
-
+	fmt.Fprintf(buf, "\treturn Read%s(r.ctx, uintptr(ptr))\n", childName)
 	fmt.Fprintf(buf, "}\n\n")
 }
 

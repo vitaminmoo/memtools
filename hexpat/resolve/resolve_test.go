@@ -664,3 +664,52 @@ struct Container {
 	assert.Equal(t, "Count", fields[2].Name)
 	assert.Equal(t, 28, fields[2].Offset)
 }
+
+func TestResolvePlacementPointer(t *testing.T) {
+	file := mustParse(t, `
+struct EntityManager {
+	u32 count;
+};
+
+EntityManager *g_entityManager : u32 @ 0x01204B98;
+`)
+	pkg, err := Resolve(file)
+	require.NoError(t, err)
+	require.Len(t, pkg.Placements, 1)
+
+	p := pkg.Placements[0]
+	assert.Equal(t, "GEntityManager", p.Name)
+	assert.Equal(t, "g_entityManager", p.RawName)
+	assert.Equal(t, int64(0x01204B98), p.Address)
+	assert.Equal(t, KindPointer, p.Type.Kind)
+	assert.Equal(t, "EntityManager", p.Type.Pointer.Pointee.StructRef.Name)
+}
+
+func TestResolvePlacementPrimitive(t *testing.T) {
+	file := mustParse(t, `
+u32 g_worldSeed @ 0x01205004;
+`)
+	pkg, err := Resolve(file)
+	require.NoError(t, err)
+	require.Len(t, pkg.Placements, 1)
+
+	p := pkg.Placements[0]
+	assert.Equal(t, "GWorldSeed", p.Name)
+	assert.Equal(t, int64(0x01205004), p.Address)
+	assert.Equal(t, KindPrimitive, p.Type.Kind)
+	assert.Equal(t, "uint32", p.Type.GoType)
+}
+
+func TestResolvePlacementStruct(t *testing.T) {
+	file := mustParse(t, `
+struct Foo { u32 x; };
+Foo foo @ 0x100;
+`)
+	pkg, err := Resolve(file)
+	require.NoError(t, err)
+	require.Len(t, pkg.Placements, 1)
+	p := pkg.Placements[0]
+	assert.Equal(t, "Foo", p.Name)
+	assert.Equal(t, int64(0x100), p.Address)
+	assert.Equal(t, KindStruct, p.Type.Kind)
+}
