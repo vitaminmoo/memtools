@@ -577,8 +577,8 @@ func (r *resolver) resolveType(tn parser.TypeNode, ptr *parser.PointerInfo, endi
 			return nil, fmt.Errorf("unsupported namespaced/template type %s", name)
 		}
 
-		// Check using aliases
-		if ud, ok := r.usingDefs[name]; ok {
+		// Check using aliases (skip forward declarations where Type is nil)
+		if ud, ok := r.usingDefs[name]; ok && ud.Type != nil {
 			return r.resolveType(ud.Type, nil, endian)
 		}
 

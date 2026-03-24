@@ -713,3 +713,39 @@ Foo foo @ 0x100;
 	assert.Equal(t, int64(0x100), p.Address)
 	assert.Equal(t, KindStruct, p.Type.Kind)
 }
+
+func TestResolveForwardDeclaredPointerField(t *testing.T) {
+	file := mustParse(t, `
+using Entity;
+using ChildrenContainer;
+
+struct Entity {
+	s32 entity_id;
+	ChildrenContainer *children_ptr : u32;
+	Entity *parent_entity_ptr : u32;
+};
+
+struct ChildrenContainer {
+	u32 begin_ptr;
+	u32 end_ptr;
+};
+`)
+	pkg, err := Resolve(file)
+	require.NoError(t, err)
+
+	var entity *StructType
+	for _, st := range pkg.Structs {
+		if st.Name == "Entity" {
+			entity = st
+		}
+	}
+	require.NotNil(t, entity)
+
+	fields := entity.Fields()
+	require.Len(t, fields, 3, "forward-declared pointer fields must not be dropped")
+	assert.Equal(t, "EntityId", fields[0].Name)
+	assert.Equal(t, "ChildrenPtr", fields[1].Name)
+	assert.Equal(t, KindPointer, fields[1].Type.Kind)
+	assert.Equal(t, "ParentEntityPtr", fields[2].Name)
+	assert.Equal(t, KindPointer, fields[2].Type.Kind)
+}

@@ -695,3 +695,33 @@ u32 g_seed @ 0x02000000;
 	assert.Contains(t, src, "AddrGGlobals uint32 = 0x01000000")
 	assert.Contains(t, src, "AddrGSeed")
 }
+
+func TestGenerateForwardDeclaredPointerFields(t *testing.T) {
+	src := mustGenerate(t, `
+using Entity;
+using ChildrenContainer;
+
+struct Entity {
+	s32 entity_id;
+	ChildrenContainer *children_ptr : u32;
+	Entity *parent_entity_ptr : u32;
+};
+
+struct ChildrenContainer {
+	u32 begin_ptr;
+	u32 end_ptr;
+};
+`)
+	assertCompiles(t, src)
+	// Forward-declared pointer fields must appear as raw uint32
+	assert.Contains(t, src, "ChildrenPtr")
+	assert.Contains(t, src, "ParentEntityPtr")
+	// The struct must have all 3 fields
+	assert.Contains(t, src, "EntityId")
+	// Follow methods must be generated
+	assert.Contains(t, src, "func (s *Entity) ReadChildrenPtr(ctx *runtime.ReadContext) (*ChildrenContainer, runtime.Errors)")
+	assert.Contains(t, src, "func (s *Entity) ReadParentEntityPtr(ctx *runtime.ReadContext) (*Entity, runtime.Errors)")
+	// Lazy reader follow methods
+	assert.Contains(t, src, "func (r *EntityReader) FollowChildrenPtr() (*ChildrenContainer, runtime.Errors)")
+	assert.Contains(t, src, "func (r *EntityReader) FollowParentEntityPtr() (*Entity, runtime.Errors)")
+}
