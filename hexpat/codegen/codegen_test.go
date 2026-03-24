@@ -829,3 +829,51 @@ fn format_counter(Counter c) {
 	assert.Contains(t, src, "func (s *Counter) FormatCounter() string")
 	assert.Contains(t, src, "for i < s.Limit")
 }
+
+func TestTranspileWithMemRead(t *testing.T) {
+	src := mustGenerate(t, `
+struct MsvcString {
+    char data[16];
+    u32 length;
+    u32 capacity;
+} [[static, format("format_msvc_string")]];
+
+fn format_msvc_string(MsvcString s) {
+    if (s.length == 0) return "";
+    if (s.capacity <= 15) {
+        str result = "";
+        for (u32 i = 0, i < s.length, i = i + 1) {
+            result = result + s.data[i];
+        }
+        return result;
+    }
+    u32 heap_ptr = s.data[0] | (s.data[1] << 8) | (s.data[2] << 16) | (s.data[3] << 24);
+    if (heap_ptr == 0) return "";
+    return std::mem::read_string(heap_ptr, s.length);
+};
+`)
+	assertCompiles(t, src)
+	// Method gets ctx param because it uses std::mem
+	assert.Contains(t, src, "func (s *MsvcString) FormatMsvcString(ctx *runtime.ReadContext) string")
+	// Helper generated
+	assert.Contains(t, src, "func _memReadString(ctx *runtime.ReadContext")
+	assert.Contains(t, src, "func _memReadUnsigned(ctx *runtime.ReadContext")
+	// Call with uint64 casts
+	assert.Contains(t, src, "_memReadString(ctx, uint64(heapPtr), uint64(s.Length))")
+}
+
+func TestTranspileMemReadUnsigned(t *testing.T) {
+	src := mustGenerate(t, `
+struct Foo {
+    u32 addr;
+} [[format("format_foo")]];
+
+fn format_foo(Foo f) {
+    u32 val = std::mem::read_unsigned(f.addr, 4);
+    return std::format("val={}", val);
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "func (s *Foo) FormatFoo(ctx *runtime.ReadContext) string")
+	assert.Contains(t, src, "_memReadUnsigned(ctx, uint64(s.Addr), uint64(4))")
+}

@@ -195,13 +195,14 @@ type BitfieldField struct {
 
 // FuncBinding represents a hexpat function bound to a struct (e.g. via [[format("fn")]]).
 type FuncBinding struct {
-	GoName     string              // Go method name (PascalCase)
-	HexpatName string              // original hexpat function name
-	Receiver   *StructType         // struct this becomes a method on
-	ReturnType string              // inferred Go return type
-	NeedsCtx   bool                // true if the body needs a *runtime.ReadContext
-	Params     []FuncBindingParam  // concrete params (receiver excluded)
-	Body       []TranspiledStmt    // transpiled Go statements
+	GoName          string              // Go method name (PascalCase)
+	HexpatName      string              // original hexpat function name
+	Receiver        *StructType         // struct this becomes a method on
+	ReturnType      string              // inferred Go return type
+	NeedsCtx        bool                // true if the body needs a *runtime.ReadContext
+	NeedsMemHelpers bool                // true if the body uses std::mem:: functions
+	Params          []FuncBindingParam  // concrete params (receiver excluded)
+	Body            []TranspiledStmt    // transpiled Go statements
 }
 
 // FuncBindingParam is a concrete parameter in a bound function.

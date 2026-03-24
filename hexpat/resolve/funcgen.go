@@ -65,24 +65,26 @@ func (r *resolver) transpileFunc(fd *parser.FnDef, receiver *StructType) *FuncBi
 	}
 
 	return &FuncBinding{
-		GoName:     toPascalCase(fd.Name),
-		HexpatName: fd.Name,
-		Receiver:   receiver,
-		ReturnType: retType,
-		NeedsCtx:   env.needsCtx,
-		Body:       stmts,
+		GoName:          toPascalCase(fd.Name),
+		HexpatName:      fd.Name,
+		Receiver:        receiver,
+		ReturnType:      retType,
+		NeedsCtx:        env.needsCtx,
+		NeedsMemHelpers: env.needsMemHelpers,
+		Body:            stmts,
 	}
 }
 
 // typeEnv tracks type information during function transpilation.
 type typeEnv struct {
-	receiver    *StructType
-	params      map[string]*envVar // function params → type info
-	locals      map[string]*envVar // local variables
-	fieldMap    map[string]string  // hexpat field name → Go PascalCase name
-	returnTypes []string           // collected from return statements
-	needsCtx    bool               // set when body references ctx-dependent operations
-	resolver    *resolver
+	receiver       *StructType
+	params         map[string]*envVar // function params → type info
+	locals         map[string]*envVar // local variables
+	fieldMap       map[string]string  // hexpat field name → Go PascalCase name
+	returnTypes    []string           // collected from return statements
+	needsCtx       bool               // set when body references ctx-dependent operations
+	needsMemHelpers bool              // set when std::mem:: functions are used
+	resolver       *resolver
 }
 
 type envVar struct {
@@ -346,12 +348,11 @@ func (env *typeEnv) transpileVarDecl(vd parser.VarDecl) ([]TranspiledStmt, error
 		if err != nil {
 			return nil, err
 		}
-		// If the var type is "string" and init is a string literal, use :=
-		if goType == "string" || goType == exprType {
+		if goType == exprType || (goType == "string" && exprType == "string") {
 			return []TranspiledStmt{{Code: fmt.Sprintf("%s := %s", goName, initExpr)}}, nil
 		}
-		// If it's a byte slice for string building, handle specially
-		if goType == "string" && exprType != "string" {
+		// Type mismatch — cast the init expression to the declared type
+		if exprType != "" && exprType != goType {
 			return []TranspiledStmt{{Code: fmt.Sprintf("%s := %s(%s)", goName, goType, initExpr)}}, nil
 		}
 		return []TranspiledStmt{{Code: fmt.Sprintf("var %s %s = %s", goName, goType, initExpr)}}, nil
@@ -539,22 +540,40 @@ type stdlibMapping struct {
 	returnType string
 	// formatStr true means first arg is a format string that needs {} → %v translation
 	formatStr bool
+	// needsCtx true means this call requires a *runtime.ReadContext
+	needsCtx bool
+	// prependCtx true means "ctx" is prepended as the first Go arg
+	prependCtx bool
 }
 
 var stdlibFuncs = map[string]stdlibMapping{
-	"std::format": {goFunc: "fmt.Sprintf", goImport: "fmt", returnType: "string", formatStr: true},
+	"std::format":            {goFunc: "fmt.Sprintf", goImport: "fmt", returnType: "string", formatStr: true},
+	"std::mem::read_string":  {goFunc: "_memReadString", returnType: "string", needsCtx: true, prependCtx: true},
+	"std::mem::read_unsigned": {goFunc: "_memReadUnsigned", returnType: "uint64", needsCtx: true, prependCtx: true},
+	"std::mem::read_signed":  {goFunc: "_memReadSigned", returnType: "int64", needsCtx: true, prependCtx: true},
 }
 
 func (env *typeEnv) transpileStdlibCall(m stdlibMapping, args []parser.Expr) (string, string, error) {
+	if m.needsCtx {
+		env.needsCtx = true
+		env.needsMemHelpers = true
+	}
+
 	var goArgs []string
+	if m.prependCtx {
+		goArgs = append(goArgs, "ctx")
+	}
 	for i, arg := range args {
-		a, _, err := env.transpileExpr(arg)
+		a, argType, err := env.transpileExpr(arg)
 		if err != nil {
 			return "", "", err
 		}
 		if i == 0 && m.formatStr {
-			// Convert hexpat format string {} → Go %v, {:02X} → %02X, etc.
 			a = convertFormatString(a)
+		}
+		// Memory helpers take uint64 — cast if the arg is a smaller numeric type
+		if m.prependCtx && argType != "uint64" && argType != "" && argType != "string" && argType != "bool" {
+			a = "uint64(" + a + ")"
 		}
 		goArgs = append(goArgs, a)
 	}

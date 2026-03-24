@@ -133,8 +133,15 @@ func Generate(pkg *resolve.Package, opts Options) ([]byte, error) {
 	}
 
 	// Transpiled function methods
+	needsMemHelpers := false
 	for _, fb := range pkg.FuncBindings {
 		writeFuncBinding(&buf, fb)
+		if fb.NeedsMemHelpers {
+			needsMemHelpers = true
+		}
+	}
+	if needsMemHelpers {
+		writeMemHelpers(&buf)
 	}
 
 	// Lazy reader types — build set of names that have readers
@@ -715,4 +722,50 @@ func containsStdFormat(stmts []resolve.TranspiledStmt) bool {
 		}
 	}
 	return false
+}
+
+// writeMemHelpers emits package-level helper functions for std::mem:: operations.
+func writeMemHelpers(buf *bytes.Buffer) {
+	fmt.Fprintf(buf, "// _memReadString reads a string of the given length from an address in process memory.\n")
+	fmt.Fprintf(buf, "func _memReadString(ctx *runtime.ReadContext, addr, length uint64) string {\n")
+	fmt.Fprintf(buf, "\tif length == 0 {\n")
+	fmt.Fprintf(buf, "\t\treturn \"\"\n")
+	fmt.Fprintf(buf, "\t}\n")
+	fmt.Fprintf(buf, "\tif length > 4096 {\n")
+	fmt.Fprintf(buf, "\t\tlength = 4096\n")
+	fmt.Fprintf(buf, "\t}\n")
+	fmt.Fprintf(buf, "\tbuf := make([]byte, length)\n")
+	fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(buf, int64(addr)); err != nil {\n")
+	fmt.Fprintf(buf, "\t\treturn \"\"\n")
+	fmt.Fprintf(buf, "\t}\n")
+	fmt.Fprintf(buf, "\treturn string(buf)\n")
+	fmt.Fprintf(buf, "}\n\n")
+
+	fmt.Fprintf(buf, "// _memReadUnsigned reads an unsigned integer of the given byte size from an address.\n")
+	fmt.Fprintf(buf, "func _memReadUnsigned(ctx *runtime.ReadContext, addr, size uint64) uint64 {\n")
+	fmt.Fprintf(buf, "\tvar buf [8]byte\n")
+	fmt.Fprintf(buf, "\tif size > 8 {\n")
+	fmt.Fprintf(buf, "\t\tsize = 8\n")
+	fmt.Fprintf(buf, "\t}\n")
+	fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(buf[:size], int64(addr)); err != nil {\n")
+	fmt.Fprintf(buf, "\t\treturn 0\n")
+	fmt.Fprintf(buf, "\t}\n")
+	fmt.Fprintf(buf, "\tswitch size {\n")
+	fmt.Fprintf(buf, "\tcase 1:\n")
+	fmt.Fprintf(buf, "\t\treturn uint64(buf[0])\n")
+	fmt.Fprintf(buf, "\tcase 2:\n")
+	fmt.Fprintf(buf, "\t\treturn uint64(binary.LittleEndian.Uint16(buf[:2]))\n")
+	fmt.Fprintf(buf, "\tcase 4:\n")
+	fmt.Fprintf(buf, "\t\treturn uint64(binary.LittleEndian.Uint32(buf[:4]))\n")
+	fmt.Fprintf(buf, "\tcase 8:\n")
+	fmt.Fprintf(buf, "\t\treturn binary.LittleEndian.Uint64(buf[:8])\n")
+	fmt.Fprintf(buf, "\tdefault:\n")
+	fmt.Fprintf(buf, "\t\treturn 0\n")
+	fmt.Fprintf(buf, "\t}\n")
+	fmt.Fprintf(buf, "}\n\n")
+
+	fmt.Fprintf(buf, "// _memReadSigned reads a signed integer of the given byte size from an address.\n")
+	fmt.Fprintf(buf, "func _memReadSigned(ctx *runtime.ReadContext, addr, size uint64) int64 {\n")
+	fmt.Fprintf(buf, "\treturn int64(_memReadUnsigned(ctx, addr, size))\n")
+	fmt.Fprintf(buf, "}\n\n")
 }
