@@ -16,6 +16,7 @@ func Resolve(file *parser.File) (*Package, error) {
 		structDefs:   make(map[string]*parser.StructDef),
 		enumDefs:     make(map[string]*parser.EnumDef),
 		bitfieldDefs: make(map[string]*parser.BitfieldDef),
+		fnDefs:       make(map[string]*parser.FnDef),
 		unionNames:   make(map[string]bool),
 		resolved:     make(map[string]*StructType),
 		resolvedE:    make(map[string]*EnumType),
@@ -61,6 +62,8 @@ func Resolve(file *parser.File) (*Package, error) {
 		case parser.UsingDef:
 			r.symbols[it.Name] = it
 			r.usingDefs[it.Name] = &it
+		case parser.FnDef:
+			r.fnDefs[it.Name] = &it
 		}
 	}
 
@@ -98,6 +101,9 @@ func Resolve(file *parser.File) (*Package, error) {
 	// Topological sort
 	r.pkg.Structs = r.topoSort()
 
+	// Bind functions to structs via [[format(...)]] attributes
+	r.bindFunctions()
+
 	// Resolve top-level placements (VarDecl with @ address)
 	for _, item := range file.Items {
 		vd, ok := item.(parser.VarDecl)
@@ -129,6 +135,7 @@ type resolver struct {
 	structDefs   map[string]*parser.StructDef
 	enumDefs     map[string]*parser.EnumDef
 	bitfieldDefs map[string]*parser.BitfieldDef
+	fnDefs       map[string]*parser.FnDef
 	unionNames   map[string]bool
 	resolved     map[string]*StructType
 	resolvedE    map[string]*EnumType

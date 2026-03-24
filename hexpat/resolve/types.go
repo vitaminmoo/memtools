@@ -10,12 +10,13 @@ const (
 
 // Package is the resolved IR for an entire hexpat file.
 type Package struct {
-	Name       string
-	Endian     Endian
-	Structs    []*StructType // dependency order
-	Enums      []*EnumType
-	Bitfields  []*BitfieldType
-	Placements []*Placement // top-level variable placements (@ address)
+	Name         string
+	Endian       Endian
+	Structs      []*StructType // dependency order
+	Enums        []*EnumType
+	Bitfields    []*BitfieldType
+	Placements   []*Placement    // top-level variable placements (@ address)
+	FuncBindings []*FuncBinding  // functions bound to structs via [[format(...)]] etc.
 }
 
 // Placement represents a top-level variable placed at a static address.
@@ -190,4 +191,27 @@ type BitfieldField struct {
 	Bits      int
 	BitOffset int    // from bit 0 of underlying
 	GoType    string // bool for 1-bit, else uint8/16/32/64
+}
+
+// FuncBinding represents a hexpat function bound to a struct (e.g. via [[format("fn")]]).
+type FuncBinding struct {
+	GoName     string              // Go method name (PascalCase)
+	HexpatName string              // original hexpat function name
+	Receiver   *StructType         // struct this becomes a method on
+	ReturnType string              // inferred Go return type
+	NeedsCtx   bool                // true if the body needs a *runtime.ReadContext
+	Params     []FuncBindingParam  // concrete params (receiver excluded)
+	Body       []TranspiledStmt    // transpiled Go statements
+}
+
+// FuncBindingParam is a concrete parameter in a bound function.
+type FuncBindingParam struct {
+	Name   string
+	GoType string
+}
+
+// TranspiledStmt is a single line/block of transpiled Go code.
+type TranspiledStmt struct {
+	Code     string            // Go source line
+	Children []TranspiledStmt  // nested block (for if/for bodies)
 }

@@ -749,3 +749,36 @@ struct ChildrenContainer {
 	assert.Equal(t, "ParentEntityPtr", fields[2].Name)
 	assert.Equal(t, KindPointer, fields[2].Type.Kind)
 }
+
+func TestResolveFuncBinding(t *testing.T) {
+	file := mustParse(t, `
+struct Foo {
+	u32 value;
+} [[format("format_foo")]];
+
+fn format_foo(Foo f) {
+	return std::format("val={}", f.value);
+};
+`)
+	pkg, err := Resolve(file)
+	require.NoError(t, err)
+	require.Len(t, pkg.FuncBindings, 1)
+
+	fb := pkg.FuncBindings[0]
+	assert.Equal(t, "FormatFoo", fb.GoName)
+	assert.Equal(t, "format_foo", fb.HexpatName)
+	assert.Equal(t, "Foo", fb.Receiver.Name)
+	assert.Equal(t, "string", fb.ReturnType)
+	assert.True(t, len(fb.Body) > 0, "function body should be transpiled")
+}
+
+func TestResolveFuncBindingMissing(t *testing.T) {
+	file := mustParse(t, `
+struct Foo {
+	u32 value;
+} [[format("nonexistent")]];
+`)
+	pkg, err := Resolve(file)
+	require.NoError(t, err)
+	assert.Len(t, pkg.FuncBindings, 0, "missing function should not create a binding")
+}

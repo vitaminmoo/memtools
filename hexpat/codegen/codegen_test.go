@@ -725,3 +725,107 @@ struct ChildrenContainer {
 	assert.Contains(t, src, "func (r *EntityReader) FollowChildrenPtr() (*ChildrenContainer, runtime.Errors)")
 	assert.Contains(t, src, "func (r *EntityReader) FollowParentEntityPtr() (*Entity, runtime.Errors)")
 }
+
+// --- Function transpilation tests ---
+
+func TestTranspileFormatFunction(t *testing.T) {
+	src := mustGenerate(t, `
+struct MsvcString {
+    char data[16];
+    u32 length;
+    u32 capacity;
+} [[static, format("format_msvc_string")]];
+
+fn format_msvc_string(MsvcString s) {
+    if (s.length == 0) return "";
+    if (s.capacity <= 15) {
+        str result = "";
+        for (u32 i = 0, i < s.length, i = i + 1) {
+            result = result + s.data[i];
+        }
+        return result;
+    }
+    return std::format("<heap len={}>", s.length);
+};
+`)
+	assertCompiles(t, src)
+	// Method generated on the struct
+	assert.Contains(t, src, "func (s *MsvcString) FormatMsvcString() string")
+	// If/else control flow
+	assert.Contains(t, src, "if s.Length == 0")
+	assert.Contains(t, src, "if s.Capacity <= 15")
+	// For loop with proper Go types
+	assert.Contains(t, src, "for i := uint32(0); i < s.Length")
+	// String concat with byte conversion
+	assert.Contains(t, src, "string(s.Data[i])")
+	// std::format → fmt.Sprintf
+	assert.Contains(t, src, "fmt.Sprintf")
+}
+
+func TestTranspileSimpleFormatFunction(t *testing.T) {
+	src := mustGenerate(t, `
+struct Header {
+    u32 magic;
+    u16 version;
+} [[format("format_header")]];
+
+fn format_header(Header h) {
+    return std::format("v{}", h.version);
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "func (s *Header) FormatHeader() string")
+	assert.Contains(t, src, `fmt.Sprintf("v%v", s.Version)`)
+}
+
+func TestTranspileFormatWithComparison(t *testing.T) {
+	src := mustGenerate(t, `
+struct Flags {
+    u32 value;
+} [[format("format_flags")]];
+
+fn format_flags(Flags f) {
+    if (f.value == 0) return "none";
+    if (f.value == 1) return "read";
+    if (f.value == 2) return "write";
+    return "unknown";
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "func (s *Flags) FormatFlags() string")
+	assert.Contains(t, src, "s.Value == 0")
+	assert.Contains(t, src, `return "none"`)
+	assert.Contains(t, src, `return "unknown"`)
+}
+
+func TestTranspileNoFunctionNoCrash(t *testing.T) {
+	// [[format("nonexistent")]] should be silently ignored
+	src := mustGenerate(t, `
+struct Foo {
+    u32 x;
+} [[format("does_not_exist")]];
+`)
+	assertCompiles(t, src)
+	assert.NotContains(t, src, "DoesNotExist")
+}
+
+func TestTranspileFormatWithWhile(t *testing.T) {
+	src := mustGenerate(t, `
+struct Counter {
+    u32 limit;
+} [[format("format_counter")]];
+
+fn format_counter(Counter c) {
+    u32 sum = 0;
+    u32 i = 0;
+    while (i < c.limit) {
+        sum = sum + i;
+        i = i + 1;
+    }
+    return std::format("sum={}", sum);
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "func (s *Counter) FormatCounter() string")
+	assert.Contains(t, src, "for i < s.Limit")
+}

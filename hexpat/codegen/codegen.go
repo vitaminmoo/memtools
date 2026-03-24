@@ -58,6 +58,14 @@ func Generate(pkg *resolve.Package, opts Options) ([]byte, error) {
 		needsBinary = true
 		needsRuntime = true
 	}
+	for _, fb := range pkg.FuncBindings {
+		if fb.NeedsCtx {
+			needsRuntime = true
+		}
+		if containsStdFormat(fb.Body) {
+			needsFmt = true
+		}
+	}
 
 	var imports []string
 	if needsBinary {
@@ -122,6 +130,11 @@ func Generate(pkg *resolve.Package, opts Options) ([]byte, error) {
 		for _, p := range pkg.Placements {
 			writePlacementReadFunc(&buf, p, pkg.Endian)
 		}
+	}
+
+	// Transpiled function methods
+	for _, fb := range pkg.FuncBindings {
+		writeFuncBinding(&buf, fb)
 	}
 
 	// Lazy reader types — build set of names that have readers
@@ -646,4 +659,60 @@ func writePlacementReadFunc(buf *bytes.Buffer, p *resolve.Placement, defaultEndi
 		fmt.Fprintf(buf, "\treturn Read%s(ctx, uintptr(Addr%s))\n", structName, p.Name)
 		fmt.Fprintf(buf, "}\n\n")
 	}
+}
+
+// writeFuncBinding emits a Go method for a transpiled hexpat function.
+func writeFuncBinding(buf *bytes.Buffer, fb *resolve.FuncBinding) {
+	receiverName := fb.Receiver.Name
+
+	// Build parameter list
+	params := ""
+	if fb.NeedsCtx {
+		params = "ctx *runtime.ReadContext"
+	}
+
+	fmt.Fprintf(buf, "// %s is transpiled from hexpat function %s.\n", fb.GoName, fb.HexpatName)
+	fmt.Fprintf(buf, "func (s *%s) %s(%s) %s {\n", receiverName, fb.GoName, params, fb.ReturnType)
+
+	writeTranspiledStmts(buf, fb.Body, 1)
+
+	fmt.Fprintf(buf, "}\n\n")
+}
+
+// writeTranspiledStmts emits transpiled statements with proper indentation.
+func writeTranspiledStmts(buf *bytes.Buffer, stmts []resolve.TranspiledStmt, depth int) {
+	indent := strings.Repeat("\t", depth)
+	for i, s := range stmts {
+		if len(s.Children) > 0 {
+			// Block statement (if, for, etc.)
+			// Check if this is a continuation (} else { or } else if)
+			if strings.HasPrefix(s.Code, "} else") {
+				fmt.Fprintf(buf, "%s%s {\n", indent, s.Code)
+			} else {
+				fmt.Fprintf(buf, "%s%s {\n", indent, s.Code)
+			}
+			writeTranspiledStmts(buf, s.Children, depth+1)
+			// Only close the block if the next stmt isn't a continuation
+			if i+1 < len(stmts) && strings.HasPrefix(stmts[i+1].Code, "} else") {
+				// Don't close — the next line starts with "} else"
+			} else {
+				fmt.Fprintf(buf, "%s}\n", indent)
+			}
+		} else {
+			fmt.Fprintf(buf, "%s%s\n", indent, s.Code)
+		}
+	}
+}
+
+// containsStdFormat checks if any transpiled statement references fmt.Sprintf.
+func containsStdFormat(stmts []resolve.TranspiledStmt) bool {
+	for _, s := range stmts {
+		if strings.Contains(s.Code, "fmt.Sprintf") {
+			return true
+		}
+		if containsStdFormat(s.Children) {
+			return true
+		}
+	}
+	return false
 }
