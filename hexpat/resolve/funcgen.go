@@ -442,6 +442,18 @@ func (env *typeEnv) transpileExpr(expr parser.Expr) (string, string, error) {
 			leftType = "uint32"
 		}
 
+		// Widen byte operands in bitwise expressions when the other operand is wider,
+		// to avoid Go type mismatch errors (e.g. byte | uint32 is invalid).
+		if e.Op == "|" || e.Op == "&" || e.Op == "^" {
+			if (leftType == "byte" || leftType == "uint8") && leftType != rightType {
+				left = rightType + "(" + left + ")"
+				leftType = rightType
+			} else if (rightType == "byte" || rightType == "uint8") && leftType != rightType {
+				right = leftType + "(" + right + ")"
+				rightType = leftType
+			}
+		}
+
 		// Comparison operators return bool
 		resultType := leftType
 		switch e.Op {
