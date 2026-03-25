@@ -435,6 +435,13 @@ func (env *typeEnv) transpileExpr(expr parser.Expr) (string, string, error) {
 			return left + " + " + right, "string", nil
 		}
 
+		// Widen byte-typed left operands in bit-shift expressions to prevent overflow.
+		// In Go, shift operations preserve the type of the left operand, so uint8 << 8 == 0.
+		if (e.Op == "<<" || e.Op == ">>") && (leftType == "byte" || leftType == "uint8") {
+			left = "uint32(" + left + ")"
+			leftType = "uint32"
+		}
+
 		// Comparison operators return bool
 		resultType := leftType
 		switch e.Op {
