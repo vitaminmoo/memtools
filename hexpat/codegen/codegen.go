@@ -215,7 +215,18 @@ func fieldGoType(rt *resolve.ResolvedType) string {
 	}
 }
 
+// canBulkRead returns true if a struct can be read with a single ReadAt call.
+// Requires static layout (no conditionals, no dynamic arrays, no remote fields) and known size.
+func canBulkRead(st *resolve.StructType) bool {
+	return !st.HasDynamicFields() && st.Size > 0
+}
+
 func writeReadFunc(buf *bytes.Buffer, st *resolve.StructType, defaultEndian resolve.Endian) {
+	if canBulkRead(st) {
+		writeBulkReadFunc(buf, st, defaultEndian)
+		return
+	}
+
 	fmt.Fprintf(buf, "func Read%s(ctx *runtime.ReadContext, addr uintptr) (*%s, runtime.Errors) {\n", st.Name, st.Name)
 	fmt.Fprintf(buf, "\tvar errs runtime.Errors\n")
 	fmt.Fprintf(buf, "\tresult := &%s{}\n", st.Name)
@@ -269,6 +280,181 @@ func writeReadFunc(buf *bytes.Buffer, st *resolve.StructType, defaultEndian reso
 
 	fmt.Fprintf(buf, "\treturn result, errs\n")
 	fmt.Fprintf(buf, "}\n\n")
+}
+
+// writeBulkReadFunc generates a ReadX function that reads the entire struct in one
+// ReadAt call, then decodes fields from the local buffer. This reduces syscall
+// overhead from N (one per field) to 1 for flat structs. Nested struct/bitfield
+// fields still use recursive ReadX calls.
+func writeBulkReadFunc(buf *bytes.Buffer, st *resolve.StructType, defaultEndian resolve.Endian) {
+	fmt.Fprintf(buf, "func Read%s(ctx *runtime.ReadContext, addr uintptr) (*%s, runtime.Errors) {\n", st.Name, st.Name)
+	fmt.Fprintf(buf, "\tvar errs runtime.Errors\n")
+	fmt.Fprintf(buf, "\tresult := &%s{}\n", st.Name)
+	fmt.Fprintf(buf, "\tvar buf [%d]byte\n\n", st.Size)
+
+	fmt.Fprintf(buf, "\tif _, err := ctx.ReadAt(buf[:], int64(addr)); err != nil {\n")
+	fmt.Fprintf(buf, "\t\terrs.Add(%q, uintptr(addr), err)\n", st.Name)
+	fmt.Fprintf(buf, "\t\treturn result, errs\n")
+	fmt.Fprintf(buf, "\t}\n\n")
+
+	for _, m := range st.Members {
+		fm, ok := m.(*resolve.FieldMember)
+		if !ok {
+			continue // skip padding
+		}
+		f := fm.Field
+		endian := f.Type.Endian
+		if endian != resolve.BigEndian && endian != resolve.LittleEndian {
+			endian = defaultEndian
+		}
+		writeBulkFieldDecode(buf, f, st.Name, endian)
+	}
+
+	fmt.Fprintf(buf, "\treturn result, errs\n")
+	fmt.Fprintf(buf, "}\n\n")
+}
+
+// writeBulkFieldDecode emits code to decode a single field from a pre-read buffer.
+// For primitive/enum/pointer/array fields, decoding is purely local (no I/O).
+// For struct/bitfield fields, a recursive ReadX call is still emitted.
+func writeBulkFieldDecode(buf *bytes.Buffer, f *resolve.Field, structName string, endian resolve.Endian) {
+	offset := f.Offset
+	ev := endianVar(endian)
+
+	switch f.Type.Kind {
+	case resolve.KindPrimitive:
+		writeBulkPrimitiveDecode(buf, f, offset, ev)
+	case resolve.KindEnum:
+		writeBulkEnumDecode(buf, f, offset, ev)
+	case resolve.KindPointer:
+		writeBulkPointerDecode(buf, f, offset, ev)
+	case resolve.KindArray:
+		writeBulkArrayDecode(buf, f, offset, ev, structName)
+	case resolve.KindStruct:
+		addrExpr := fmt.Sprintf("int64(addr)+%d", offset)
+		writeCompositeFieldRead(buf, f, fmt.Sprintf("%s.%s", structName, f.Name), addrExpr, f.Type.StructRef.Name)
+	case resolve.KindBitfield:
+		addrExpr := fmt.Sprintf("int64(addr)+%d", offset)
+		writeCompositeFieldRead(buf, f, fmt.Sprintf("%s.%s", structName, f.Name), addrExpr, f.Type.BitfieldRef.Name)
+	}
+}
+
+func writeBulkPrimitiveDecode(buf *bytes.Buffer, f *resolve.Field, offset int, ev string) {
+	prim := f.Type.Primitive
+
+	switch prim.GoType {
+	case "uint8", "byte":
+		fmt.Fprintf(buf, "\tresult.%s = buf[%d]\n", f.Name, offset)
+	case "int8":
+		fmt.Fprintf(buf, "\tresult.%s = int8(buf[%d])\n", f.Name, offset)
+	case "bool":
+		fmt.Fprintf(buf, "\tresult.%s = buf[%d] != 0\n", f.Name, offset)
+	case "uint16":
+		fmt.Fprintf(buf, "\tresult.%s = %s.Uint16(buf[%d:])\n", f.Name, ev, offset)
+	case "int16":
+		fmt.Fprintf(buf, "\tresult.%s = int16(%s.Uint16(buf[%d:]))\n", f.Name, ev, offset)
+	case "uint32":
+		fmt.Fprintf(buf, "\tresult.%s = %s.Uint32(buf[%d:])\n", f.Name, ev, offset)
+	case "int32":
+		fmt.Fprintf(buf, "\tresult.%s = int32(%s.Uint32(buf[%d:]))\n", f.Name, ev, offset)
+	case "uint64":
+		fmt.Fprintf(buf, "\tresult.%s = %s.Uint64(buf[%d:])\n", f.Name, ev, offset)
+	case "int64":
+		fmt.Fprintf(buf, "\tresult.%s = int64(%s.Uint64(buf[%d:]))\n", f.Name, ev, offset)
+	case "float32":
+		fmt.Fprintf(buf, "\tresult.%s = math.Float32frombits(%s.Uint32(buf[%d:]))\n", f.Name, ev, offset)
+	case "float64":
+		fmt.Fprintf(buf, "\tresult.%s = math.Float64frombits(%s.Uint64(buf[%d:]))\n", f.Name, ev, offset)
+	default:
+		// Odd-sized types like [3]byte, [6]byte, etc.
+		if strings.HasPrefix(prim.GoType, "[") {
+			fmt.Fprintf(buf, "\tcopy(result.%s[:], buf[%d:%d])\n", f.Name, offset, offset+prim.Size)
+		}
+	}
+}
+
+func writeBulkEnumDecode(buf *bytes.Buffer, f *resolve.Field, offset int, ev string) {
+	et := f.Type.EnumRef
+	enumGoType := f.Type.GoType
+
+	switch et.UnderlyingType.GoType {
+	case "uint8", "byte":
+		fmt.Fprintf(buf, "\tresult.%s = %s(buf[%d])\n", f.Name, enumGoType, offset)
+	case "int8":
+		fmt.Fprintf(buf, "\tresult.%s = %s(int8(buf[%d]))\n", f.Name, enumGoType, offset)
+	case "uint16":
+		fmt.Fprintf(buf, "\tresult.%s = %s(%s.Uint16(buf[%d:]))\n", f.Name, enumGoType, ev, offset)
+	case "int16":
+		fmt.Fprintf(buf, "\tresult.%s = %s(int16(%s.Uint16(buf[%d:])))\n", f.Name, enumGoType, ev, offset)
+	case "uint32":
+		fmt.Fprintf(buf, "\tresult.%s = %s(%s.Uint32(buf[%d:]))\n", f.Name, enumGoType, ev, offset)
+	case "int32":
+		fmt.Fprintf(buf, "\tresult.%s = %s(int32(%s.Uint32(buf[%d:])))\n", f.Name, enumGoType, ev, offset)
+	case "uint64":
+		fmt.Fprintf(buf, "\tresult.%s = %s(%s.Uint64(buf[%d:]))\n", f.Name, enumGoType, ev, offset)
+	case "int64":
+		fmt.Fprintf(buf, "\tresult.%s = %s(int64(%s.Uint64(buf[%d:])))\n", f.Name, enumGoType, ev, offset)
+	}
+}
+
+func writeBulkPointerDecode(buf *bytes.Buffer, f *resolve.Field, offset int, ev string) {
+	ptrSize := f.Type.Pointer.SizeType.Size
+
+	switch ptrSize {
+	case 4:
+		fmt.Fprintf(buf, "\tresult.%s = %s.Uint32(buf[%d:])\n", f.Name, ev, offset)
+	case 8:
+		fmt.Fprintf(buf, "\tresult.%s = %s.Uint64(buf[%d:])\n", f.Name, ev, offset)
+	}
+}
+
+func writeBulkArrayDecode(buf *bytes.Buffer, f *resolve.Field, offset int, ev string, structName string) {
+	arr := f.Type.Array
+	elem := arr.Element
+
+	switch elem.Kind {
+	case resolve.KindPrimitive:
+		if elem.Size == 1 {
+			// Byte arrays: copy from buffer
+			fmt.Fprintf(buf, "\tcopy(result.%s[:], buf[%d:%d])\n", f.Name, offset, offset+arr.Length*elem.Size)
+		} else {
+			// Multi-byte primitive arrays: decode each element from buffer
+			prim := elem.Primitive
+			fmt.Fprintf(buf, "\tfor i := range result.%s {\n", f.Name)
+			elemOff := fmt.Sprintf("%d+i*%d", offset, elem.Size)
+
+			switch prim.GoType {
+			case "uint16":
+				fmt.Fprintf(buf, "\t\tresult.%s[i] = %s.Uint16(buf[%s:])\n", f.Name, ev, elemOff)
+			case "int16":
+				fmt.Fprintf(buf, "\t\tresult.%s[i] = int16(%s.Uint16(buf[%s:]))\n", f.Name, ev, elemOff)
+			case "uint32":
+				fmt.Fprintf(buf, "\t\tresult.%s[i] = %s.Uint32(buf[%s:])\n", f.Name, ev, elemOff)
+			case "int32":
+				fmt.Fprintf(buf, "\t\tresult.%s[i] = int32(%s.Uint32(buf[%s:]))\n", f.Name, ev, elemOff)
+			case "uint64":
+				fmt.Fprintf(buf, "\t\tresult.%s[i] = %s.Uint64(buf[%s:])\n", f.Name, ev, elemOff)
+			case "int64":
+				fmt.Fprintf(buf, "\t\tresult.%s[i] = int64(%s.Uint64(buf[%s:]))\n", f.Name, ev, elemOff)
+			case "float32":
+				fmt.Fprintf(buf, "\t\tresult.%s[i] = math.Float32frombits(%s.Uint32(buf[%s:]))\n", f.Name, ev, elemOff)
+			case "float64":
+				fmt.Fprintf(buf, "\t\tresult.%s[i] = math.Float64frombits(%s.Uint64(buf[%s:]))\n", f.Name, ev, elemOff)
+			}
+
+			fmt.Fprintf(buf, "\t}\n")
+		}
+	case resolve.KindStruct:
+		// Struct array elements need recursive reads
+		fmt.Fprintf(buf, "\tfor i := range result.%s {\n", f.Name)
+		elemAddrExpr := fmt.Sprintf("int64(addr)+%d+int64(i)*%d", offset, elem.Size)
+		fmt.Fprintf(buf, "\t\telem, elemErrs := Read%s(ctx, uintptr(%s))\n", elem.StructRef.Name, elemAddrExpr)
+		fmt.Fprintf(buf, "\t\tif elem != nil {\n")
+		fmt.Fprintf(buf, "\t\t\tresult.%s[i] = *elem\n", f.Name)
+		fmt.Fprintf(buf, "\t\t}\n")
+		fmt.Fprintf(buf, "\t\terrs = append(errs, elemErrs...)\n")
+		fmt.Fprintf(buf, "\t}\n")
+	}
 }
 
 // writeOffsetAdvance emits offset += size for dynamic offset tracking.

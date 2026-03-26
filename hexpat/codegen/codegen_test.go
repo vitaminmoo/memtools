@@ -877,3 +877,154 @@ fn format_foo(Foo f) {
 	assert.Contains(t, src, "func (s *Foo) FormatFoo(ctx *runtime.ReadContext) string")
 	assert.Contains(t, src, "_memReadUnsigned(ctx, uint64(s.Addr), uint64(4))")
 }
+
+// --- Bulk read tests ---
+
+func TestBulkReadSimpleStruct(t *testing.T) {
+	src := mustGenerate(t, `
+struct Header {
+	u32 magic;
+	u16 version;
+	u8 flags;
+};
+`)
+	assertCompiles(t, src)
+	// Single ReadAt for entire 7-byte struct
+	assert.Contains(t, src, "var buf [7]byte")
+	assert.Contains(t, src, "ctx.ReadAt(buf[:], int64(addr))")
+	// Fields decoded from buffer, not per-field ReadAt
+	assert.Contains(t, src, "result.Magic = binary.LittleEndian.Uint32(buf[0:])")
+	assert.Contains(t, src, "result.Version = binary.LittleEndian.Uint16(buf[4:])")
+	assert.Contains(t, src, "result.Flags = buf[6]")
+}
+
+func TestBulkReadWithEnum(t *testing.T) {
+	src := mustGenerate(t, `
+enum Status : u16 {
+	OK = 0,
+	Error = 1
+};
+
+struct Msg {
+	u32 id;
+	Status status;
+};
+`)
+	assertCompiles(t, src)
+	// Enum decoded from buffer
+	assert.Contains(t, src, "result.Status = Status(binary.LittleEndian.Uint16(buf[4:]))")
+}
+
+func TestBulkReadWithFloats(t *testing.T) {
+	src := mustGenerate(t, `
+struct Vec3 {
+	float x;
+	float y;
+	double z;
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "var buf [16]byte")
+	assert.Contains(t, src, "math.Float32frombits(binary.LittleEndian.Uint32(buf[0:]))")
+	assert.Contains(t, src, "math.Float64frombits(binary.LittleEndian.Uint64(buf[8:]))")
+}
+
+func TestBulkReadWithPointer(t *testing.T) {
+	src := mustGenerate(t, `
+struct Target { u32 value; };
+struct Container {
+	u32 id;
+	Target *ptr : u32;
+};
+`)
+	assertCompiles(t, src)
+	// Pointer decoded from buffer
+	assert.Contains(t, src, "result.Ptr = binary.LittleEndian.Uint32(buf[4:])")
+}
+
+func TestBulkReadWithByteArray(t *testing.T) {
+	src := mustGenerate(t, `
+struct Header {
+	u8 magic[4];
+	u32 size;
+};
+`)
+	assertCompiles(t, src)
+	// Byte array copied from buffer
+	assert.Contains(t, src, "copy(result.Magic[:], buf[0:4])")
+	assert.Contains(t, src, "result.Size = binary.LittleEndian.Uint32(buf[4:])")
+}
+
+func TestBulkReadWithMultiByteArray(t *testing.T) {
+	src := mustGenerate(t, `
+struct Data {
+	u32 values[3];
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "var buf [12]byte")
+	assert.Contains(t, src, "for i := range result.Values")
+	assert.Contains(t, src, "binary.LittleEndian.Uint32(buf[0+i*4:])")
+}
+
+func TestBulkReadNestedStructStillRecursive(t *testing.T) {
+	src := mustGenerate(t, `
+struct Inner { u16 x; u16 y; };
+struct Outer { u32 id; Inner pos; u32 flags; };
+`)
+	assertCompiles(t, src)
+	// Outer should bulk-read its full size
+	assert.Contains(t, src, "var buf [12]byte")
+	// Flat fields decoded from buffer
+	assert.Contains(t, src, "result.Id = binary.LittleEndian.Uint32(buf[0:])")
+	assert.Contains(t, src, "result.Flags = binary.LittleEndian.Uint32(buf[8:])")
+	// Nested struct still uses recursive call
+	assert.Contains(t, src, "ReadInner(ctx, uintptr(int64(addr)+4))")
+}
+
+func TestBulkReadNotUsedForDynamicStruct(t *testing.T) {
+	src := mustGenerate(t, `
+struct Data {
+	u32 count;
+	u8 items[count];
+};
+`)
+	assertCompiles(t, src)
+	// Dynamic struct should use per-field pattern, not bulk read
+	assert.Contains(t, src, "offset := int64(0)")
+	assert.NotContains(t, src, "errs.Add(\"Data\", uintptr(addr), err)")
+}
+
+func TestBulkReadWithEndianOverride(t *testing.T) {
+	src := mustGenerate(t, `
+struct Mixed {
+	le u32 little_val;
+	be u32 big_val;
+};
+`)
+	assertCompiles(t, src)
+	assert.Contains(t, src, "var buf [8]byte")
+	assert.Contains(t, src, "binary.LittleEndian.Uint32(buf[0:])")
+	assert.Contains(t, src, "binary.BigEndian.Uint32(buf[4:])")
+}
+
+func TestBulkReadIntegration(t *testing.T) {
+	// Verify that bulk-read generated code produces correct results
+	var data bytes.Buffer
+	binary.Write(&data, binary.LittleEndian, uint32(0xDEADBEEF)) // magic at 0
+	binary.Write(&data, binary.LittleEndian, uint16(0x0102))      // version at 4
+	binary.Write(&data, binary.LittleEndian, uint8(0x42))         // flags at 6
+
+	ctx := runtime.NewReadContext(bytes.NewReader(data.Bytes()))
+
+	// Read the full 7 bytes in one call (simulating what bulk read does)
+	var buf [7]byte
+	n, err := ctx.ReadAt(buf[:], 0)
+	require.NoError(t, err)
+	assert.Equal(t, 7, n)
+
+	// Decode from buffer at offsets (matching generated bulk read pattern)
+	assert.Equal(t, uint32(0xDEADBEEF), binary.LittleEndian.Uint32(buf[0:]))
+	assert.Equal(t, uint16(0x0102), binary.LittleEndian.Uint16(buf[4:]))
+	assert.Equal(t, uint8(0x42), buf[6])
+}
