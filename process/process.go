@@ -12,11 +12,16 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/vitaminmoo/memtools/hexpat/runtime"
 	"github.com/vitaminmoo/memtools/maps"
 	"github.com/vitaminmoo/memtools/memory"
 	"github.com/vitaminmoo/memtools/sparsestruct"
 	"golang.org/x/sys/unix"
 )
+
+// maxBatchIov caps how many iovecs go into a single process_vm_readv call.
+// Linux's IOV_MAX is 1024; we leave a small margin.
+const maxBatchIov = 1024
 
 // Pattern holds a value and a mask for byte-level masked searching.
 type Pattern struct {
@@ -159,6 +164,43 @@ func (p *Process) ReadUint32(addr uintptr) (uint32, error) {
 		return 0, fmt.Errorf("read %d bytes, expected 4", read)
 	}
 	return binary.LittleEndian.Uint32(b[0:]), nil
+}
+
+// ReadBatch fills every req.Buf with bytes from req.Addr using a single
+// process_vm_readv call per chunk of up to maxBatchIov requests. Implements
+// runtime.BatchReader so ReadContext.ReadBatch can dispatch to it directly.
+func (p *Process) ReadBatch(reqs []runtime.ReadReq) error {
+	if len(reqs) == 0 {
+		return nil
+	}
+	for offset := 0; offset < len(reqs); offset += maxBatchIov {
+		end := offset + maxBatchIov
+		if end > len(reqs) {
+			end = len(reqs)
+		}
+		chunk := reqs[offset:end]
+
+		localIov := make([]unix.Iovec, len(chunk))
+		remoteIov := make([]unix.RemoteIovec, len(chunk))
+		var want int
+		for i := range chunk {
+			r := &chunk[i]
+			if len(r.Buf) == 0 {
+				return fmt.Errorf("ReadBatch req %d: empty buffer", offset+i)
+			}
+			localIov[i] = unix.Iovec{Base: &r.Buf[0], Len: uint64(len(r.Buf))}
+			remoteIov[i] = unix.RemoteIovec{Base: r.Addr, Len: len(r.Buf)}
+			want += len(r.Buf)
+		}
+		n, err := unix.ProcessVMReadv(p.PID, localIov, remoteIov, 0)
+		if err != nil {
+			return fmt.Errorf("ProcessVMReadv batch (chunk @%d, %d reqs): %w", offset, len(chunk), err)
+		}
+		if n != want {
+			return fmt.Errorf("ProcessVMReadv batch short read: got %d, want %d", n, want)
+		}
+	}
+	return nil
 }
 
 // Read reads data from the process's memory at a given address into a something oh god

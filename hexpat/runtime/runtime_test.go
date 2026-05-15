@@ -63,6 +63,66 @@ func TestChainError(t *testing.T) {
 	assert.ErrorIs(t, ce, inner)
 }
 
+func TestReadBatchFallback(t *testing.T) {
+	data := []byte{0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17}
+	ctx := NewReadContext(bytes.NewReader(data))
+
+	reqs := []ReadReq{
+		{Addr: 0, Buf: make([]byte, 2)},
+		{Addr: 5, Buf: make([]byte, 3)},
+		{Addr: 2, Buf: make([]byte, 1)},
+	}
+	require.NoError(t, ctx.ReadBatch(reqs))
+	assert.Equal(t, []byte{0x10, 0x11}, reqs[0].Buf)
+	assert.Equal(t, []byte{0x15, 0x16, 0x17}, reqs[1].Buf)
+	assert.Equal(t, []byte{0x12}, reqs[2].Buf)
+}
+
+func TestReadBatchEmpty(t *testing.T) {
+	ctx := NewReadContext(bytes.NewReader([]byte{0xAA}))
+	assert.NoError(t, ctx.ReadBatch(nil))
+	assert.NoError(t, ctx.ReadBatch([]ReadReq{}))
+}
+
+type batchSpy struct {
+	io.ReadSeeker
+	calls int
+}
+
+func (b *batchSpy) ReadBatch(reqs []ReadReq) error {
+	b.calls++
+	for i := range reqs {
+		// fill with 0xFF so test can distinguish from fallback path
+		for j := range reqs[i].Buf {
+			reqs[i].Buf[j] = 0xFF
+		}
+	}
+	return nil
+}
+
+func TestReadBatchDispatchesToInterface(t *testing.T) {
+	spy := &batchSpy{ReadSeeker: bytes.NewReader([]byte{0x00, 0x00})}
+	ctx := NewReadContext(spy)
+	reqs := []ReadReq{{Addr: 0, Buf: make([]byte, 1)}}
+	require.NoError(t, ctx.ReadBatch(reqs))
+	assert.Equal(t, 1, spy.calls)
+	assert.Equal(t, byte(0xFF), reqs[0].Buf[0])
+}
+
+func TestCollector(t *testing.T) {
+	data := []byte{0xA0, 0xA1, 0xA2, 0xA3, 0xA4}
+	ctx := NewReadContext(bytes.NewReader(data))
+	c := NewCollector(ctx)
+
+	b1 := c.Add(0, 2)
+	b2 := c.Add(3, 2)
+	assert.Equal(t, 2, c.Len())
+	require.NoError(t, c.Flush())
+	assert.Equal(t, []byte{0xA0, 0xA1}, b1)
+	assert.Equal(t, []byte{0xA3, 0xA4}, b2)
+	assert.Equal(t, 0, c.Len(), "Flush should reset")
+}
+
 func TestErrors(t *testing.T) {
 	var errs Errors
 	assert.False(t, errs.HasFatal())

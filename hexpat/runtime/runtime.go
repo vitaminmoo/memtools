@@ -29,6 +29,74 @@ func (c *ReadContext) ReadAt(buf []byte, addr int64) (int, error) {
 	return io.ReadFull(c.r, buf)
 }
 
+// ReadReq describes one address range to fetch into Buf.
+type ReadReq struct {
+	Addr uintptr
+	Buf  []byte
+}
+
+// BatchReader is implemented by ReadSeekers that can satisfy multiple
+// ReadReqs in a single underlying operation (e.g. one process_vm_readv
+// syscall with multiple iovecs).
+type BatchReader interface {
+	ReadBatch(reqs []ReadReq) error
+}
+
+// ReadBatch fills every req.Buf with bytes from req.Addr. If the underlying
+// io.ReadSeeker implements BatchReader, the whole batch is issued in a single
+// underlying call; otherwise reads are performed sequentially via ReadAt.
+func (c *ReadContext) ReadBatch(reqs []ReadReq) error {
+	if len(reqs) == 0 {
+		return nil
+	}
+	if br, ok := c.r.(BatchReader); ok {
+		return br.ReadBatch(reqs)
+	}
+	for i := range reqs {
+		if _, err := c.ReadAt(reqs[i].Buf, int64(reqs[i].Addr)); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Collector queues read requests and flushes them in one batch. Use this when
+// a hot path needs many small reads that can be issued together (e.g. an array
+// of pointer dereferences). Each Add returns the buffer the caller will own
+// after Flush; reading from the buffer before Flush has undefined contents.
+type Collector struct {
+	ctx  *ReadContext
+	reqs []ReadReq
+}
+
+// NewCollector returns a Collector bound to ctx.
+func NewCollector(ctx *ReadContext) *Collector {
+	return &Collector{ctx: ctx}
+}
+
+// Add enqueues a read of size bytes at addr and returns the destination
+// buffer. The buffer is valid to read after Flush returns.
+func (c *Collector) Add(addr uintptr, size int) []byte {
+	buf := make([]byte, size)
+	c.reqs = append(c.reqs, ReadReq{Addr: addr, Buf: buf})
+	return buf
+}
+
+// Len returns the number of queued requests.
+func (c *Collector) Len() int { return len(c.reqs) }
+
+// Flush issues all queued requests. After Flush, each buffer returned by Add
+// is populated with the bytes read from its address. The collector is reset
+// and may be reused.
+func (c *Collector) Flush() error {
+	if len(c.reqs) == 0 {
+		return nil
+	}
+	err := c.ctx.ReadBatch(c.reqs)
+	c.reqs = c.reqs[:0]
+	return err
+}
+
 // Visit returns true if addr was already visited, marking it if not.
 func (c *ReadContext) Visit(addr uintptr) bool {
 	if c.visited[addr] {
