@@ -2,10 +2,33 @@
 package runtime
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 )
+
+// MaxDynamicArrayLen bounds the element count of a dynamically-sized array
+// decoded from remote memory. A C++ vector whose Begin/End pointers are stale,
+// or torn from being read while the target mutates it, can yield an absurd
+// length (e.g. a uint32 pointer subtraction that underflows to ~4 billion).
+// Allocating and reading that many elements would hang the reader and exhaust
+// memory, so any computed length above this is treated as corrupt.
+const MaxDynamicArrayLen = 1 << 20
+
+// ErrArrayTooLong is recorded against a field when its dynamically-computed
+// array length exceeds MaxDynamicArrayLen and is therefore assumed corrupt.
+var ErrArrayTooLong = errors.New("dynamic array length exceeds MaxDynamicArrayLen; treating as corrupt")
+
+// BoundedLen validates a dynamically-computed array length. It returns the
+// length and true when 0 <= n <= MaxDynamicArrayLen, or (0, false) when the
+// value is negative or implausibly large and should be treated as corrupt.
+func BoundedLen(n int) (int, bool) {
+	if n < 0 || n > MaxDynamicArrayLen {
+		return 0, false
+	}
+	return n, true
+}
 
 // ReadContext wraps an io.ReadSeeker with cycle detection state.
 type ReadContext struct {

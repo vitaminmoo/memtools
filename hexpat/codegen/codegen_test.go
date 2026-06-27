@@ -369,6 +369,9 @@ struct StdVector {
 	// Length expression should reference sibling fields
 	assert.Contains(t, src, "result.EndPtr")
 	assert.Contains(t, src, "result.BeginPtr")
+	// A corrupt/torn pointer pair must not allocate an unbounded slice.
+	assert.Contains(t, src, "runtime.BoundedLen(")
+	assert.Contains(t, src, "runtime.ErrArrayTooLong")
 }
 
 func TestGenerateExprArrayMultiByte(t *testing.T) {

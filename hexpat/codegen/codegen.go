@@ -626,7 +626,11 @@ func writeArrayRead(buf *bytes.Buffer, f *resolve.Field, path string, addrExpr s
 
 	if isDynamic {
 		fmt.Fprintf(buf, "\t// Field: %s (dynamic array) at %s\n", f.Name, addrExpr)
-		fmt.Fprintf(buf, "\tresult.%s = make(%s, int(%s))\n", f.Name, f.Type.GoType, arr.LengthExpr)
+		fmt.Fprintf(buf, "\tif __n, __ok := runtime.BoundedLen(int(%s)); __ok {\n", arr.LengthExpr)
+		fmt.Fprintf(buf, "\t\tresult.%s = make(%s, __n)\n", f.Name, f.Type.GoType)
+		fmt.Fprintf(buf, "\t} else {\n")
+		fmt.Fprintf(buf, "\t\terrs.Add(%q, uintptr(%s), runtime.ErrArrayTooLong)\n", path, addrExpr)
+		fmt.Fprintf(buf, "\t}\n")
 	} else {
 		fmt.Fprintf(buf, "\t// Field: %s (array[%d]) at %s\n", f.Name, arr.Length, addrExpr)
 	}
