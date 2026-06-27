@@ -759,8 +759,8 @@ fn format_msvc_string(MsvcString s) {
 	assert.Contains(t, src, "if s.Capacity <= 15")
 	// For loop with proper Go types
 	assert.Contains(t, src, "for i := uint32(0); i < s.Length")
-	// String concat with byte conversion
-	assert.Contains(t, src, "string(s.Data[i])")
+	// String concat with byte conversion; fixed array indexed safely via runtime.At
+	assert.Contains(t, src, "string(runtime.At(s.Data[:], int(i)))")
 	// std::format → fmt.Sprintf
 	assert.Contains(t, src, "fmt.Sprintf")
 }

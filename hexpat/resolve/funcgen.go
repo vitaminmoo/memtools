@@ -415,6 +415,12 @@ func (env *typeEnv) transpileExpr(expr parser.Expr) (string, string, error) {
 		}
 		// Array indexing: element type
 		elemType := arrayElementType(objType)
+		// Fixed-size arrays ([N]T) are indexed through runtime.At so a corrupt
+		// or torn index can never panic. Dynamic slices ([]T) keep plain
+		// indexing; their length is already bounded at decode time.
+		if strings.HasPrefix(objType, "[") && !strings.HasPrefix(objType, "[]") {
+			return "runtime.At(" + obj + "[:], int(" + idx + "))", elemType, nil
+		}
 		return obj + "[" + idx + "]", elemType, nil
 
 	case parser.BinaryExpr:

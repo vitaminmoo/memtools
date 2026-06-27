@@ -30,6 +30,18 @@ func BoundedLen(n int) (int, bool) {
 	return n, true
 }
 
+// At returns s[i], or the zero value of T when i is out of range. Generated
+// format functions index fixed-size arrays through At so that a corrupt or
+// torn index — for example a length field read while the target mutates the
+// struct — yields an empty value instead of panicking.
+func At[T any](s []T, i int) T {
+	if i < 0 || i >= len(s) {
+		var zero T
+		return zero
+	}
+	return s[i]
+}
+
 // ReadContext wraps an io.ReadSeeker with cycle detection state.
 type ReadContext struct {
 	r       io.ReadSeeker
