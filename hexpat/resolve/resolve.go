@@ -42,6 +42,7 @@ func Resolve(file *parser.File) (*Package, error) {
 		case parser.StructDef:
 			r.symbols[it.Name] = it
 			r.structDefs[it.Name] = &it
+			r.structOrder = append(r.structOrder, it.Name)
 		case parser.UnionDef:
 			// Convert union to struct-like for unified processing
 			sd := parser.StructDef{
@@ -53,12 +54,15 @@ func Resolve(file *parser.File) (*Package, error) {
 			r.symbols[it.Name] = it
 			r.structDefs[it.Name] = &sd
 			r.unionNames[it.Name] = true
+			r.structOrder = append(r.structOrder, it.Name)
 		case parser.EnumDef:
 			r.symbols[it.Name] = it
 			r.enumDefs[it.Name] = &it
+			r.enumOrder = append(r.enumOrder, it.Name)
 		case parser.BitfieldDef:
 			r.symbols[it.Name] = it
 			r.bitfieldDefs[it.Name] = &it
+			r.bitfieldOrder = append(r.bitfieldOrder, it.Name)
 		case parser.UsingDef:
 			r.symbols[it.Name] = it
 			r.usingDefs[it.Name] = &it
@@ -67,18 +71,18 @@ func Resolve(file *parser.File) (*Package, error) {
 		}
 	}
 
-	// Resolve enums
-	for name, ed := range r.enumDefs {
-		et, err := r.resolveEnum(name, ed)
+	// Resolve enums (declaration order for deterministic output)
+	for _, name := range r.enumOrder {
+		et, err := r.resolveEnum(name, r.enumDefs[name])
 		if err != nil {
 			return nil, fmt.Errorf("resolving enum %s: %w", name, err)
 		}
 		r.pkg.Enums = append(r.pkg.Enums, et)
 	}
 
-	// Resolve bitfields
-	for name, bd := range r.bitfieldDefs {
-		bt, err := r.resolveBitfield(name, bd)
+	// Resolve bitfields (declaration order for deterministic output)
+	for _, name := range r.bitfieldOrder {
+		bt, err := r.resolveBitfield(name, r.bitfieldDefs[name])
 		if err != nil {
 			return nil, fmt.Errorf("resolving bitfield %s: %w", name, err)
 		}
@@ -86,14 +90,14 @@ func Resolve(file *parser.File) (*Package, error) {
 	}
 
 	// Resolve structs/unions (pass 1: register names, pass 2: resolve fields)
-	for name := range r.structDefs {
+	for _, name := range r.structOrder {
 		r.resolved[name] = &StructType{
 			Name:    toPascalCase(name),
 			IsUnion: r.unionNames[name],
 		}
 	}
-	for name, sd := range r.structDefs {
-		if err := r.resolveStructFields(name, sd); err != nil {
+	for _, name := range r.structOrder {
+		if err := r.resolveStructFields(name, r.structDefs[name]); err != nil {
 			return nil, fmt.Errorf("resolving struct %s: %w", name, err)
 		}
 	}
@@ -141,6 +145,12 @@ type resolver struct {
 	resolvedE    map[string]*EnumType
 	resolvedBF   map[string]*BitfieldType
 	pkg          *Package
+
+	// Declaration order, captured during the collect phase, so emitted
+	// output is deterministic (map iteration is not) and mirrors the source.
+	structOrder   []string
+	enumOrder     []string
+	bitfieldOrder []string
 }
 
 func (r *resolver) resolveEnum(name string, ed *parser.EnumDef) (*EnumType, error) {
@@ -675,9 +685,10 @@ func (r *resolver) topoSort() []*StructType {
 		result = append(result, st)
 	}
 
-	for _, sd := range r.structDefs {
-		st := r.resolved[sd.Name]
-		if st != nil {
+	// Visit roots in declaration order so the topological result is
+	// deterministic (dependencies still emitted before dependents).
+	for _, name := range r.structOrder {
+		if st := r.resolved[name]; st != nil {
 			visit(st)
 		}
 	}

@@ -782,3 +782,45 @@ struct Foo {
 	require.NoError(t, err)
 	assert.Len(t, pkg.FuncBindings, 0, "missing function should not create a binding")
 }
+
+// TestResolveDeterministicOrder guards against map-iteration nondeterminism in
+// the resolver: emitted enums, bitfields and structs must appear in source
+// declaration order, identically across repeated resolves. Regression for the
+// churny generated-diff bug.
+func TestResolveDeterministicOrder(t *testing.T) {
+	src := `
+enum Color : u8 { Red, Green, Blue };
+enum Size : u8 { Small, Large };
+bitfield Flags { a : 1; b : 1; };
+bitfield More { x : 2; };
+struct Alpha { u32 v; };
+struct Beta { Alpha a; u16 w; };
+struct Gamma { Beta b; };
+struct Delta { u8 z; };
+`
+	wantEnums := []string{"Color", "Size"}
+	wantBitfields := []string{"Flags", "More"}
+	// Structs are topologically sorted (deps before dependents) but otherwise
+	// follow declaration order: Alpha before Beta before Gamma; Delta last.
+	wantStructs := []string{"Alpha", "Beta", "Gamma", "Delta"}
+
+	for i := 0; i < 20; i++ {
+		pkg, err := Resolve(mustParse(t, src))
+		require.NoError(t, err)
+
+		var enums, bitfields, structs []string
+		for _, e := range pkg.Enums {
+			enums = append(enums, e.Name)
+		}
+		for _, b := range pkg.Bitfields {
+			bitfields = append(bitfields, b.Name)
+		}
+		for _, s := range pkg.Structs {
+			structs = append(structs, s.Name)
+		}
+
+		assert.Equal(t, wantEnums, enums, "enum order (iter %d)", i)
+		assert.Equal(t, wantBitfields, bitfields, "bitfield order (iter %d)", i)
+		assert.Equal(t, wantStructs, structs, "struct order (iter %d)", i)
+	}
+}

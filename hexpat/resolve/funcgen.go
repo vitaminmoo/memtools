@@ -10,7 +10,8 @@ import (
 // bindFunctions scans struct attributes for [[format("fn_name")]] and binds
 // the named function to the struct with concrete types.
 func (r *resolver) bindFunctions() {
-	for name, sd := range r.structDefs {
+	for _, name := range r.structOrder {
+		sd := r.structDefs[name]
 		st := r.resolved[name]
 		if st == nil {
 			continue
